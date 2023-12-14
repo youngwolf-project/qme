@@ -19,7 +19,11 @@ int main(int argc, const char* argv[])
 		"!(a > 0) ? a : b",
 		"a && b ? a : -1.11",
 		"a || b ? a + b : -2.22",
+		"(a <= 0 && b <= 0 && c <= 0 && d <= 0 && e <= 0 && f <= 0) ? 0 : (a > 0) ? a : (b > 0) ? b : (c > 0) ? c : (d > 0) ? d : (e > 0) ? e : (f > 0) ? f : -1",
+		"a > 0 ? b > 0 ? b : 100 : c + 1",
+		"!(a > 0) ? a : b ? c : 0",
 
+		//following expressions are supposed to be invalid:
 		"!a",
 		"?a",
 		":a",
@@ -35,9 +39,6 @@ int main(int argc, const char* argv[])
 		"a! > 0 ? a : b",
 		"!(a > 0) ? a : b : c",
 		"!(a > 0) ? a : b : c : 0",
-		"!(a > 0) ? a : b ? c : 0",
-		"(a <= 0 && b <= 0 && c <= 0 && d <= 0 && e <= 0 && f <= 0) ? 0 : (a > 0) ? a : (b > 0) ? b : (c > 0) ? c : (d > 0) ? d : (e > 0) ? e : (f > 0) ? f : -1",
-		"a > 0 ? b > 0 ? b : 100 : c + 1",
 	};
 	for (size_t i = 0; i < sizeof(inputs) / sizeof(const char*); ++i)
 	{
@@ -45,21 +46,38 @@ int main(int argc, const char* argv[])
 		if (exp)
 		{
 			std::map<std::string, float> data_map;
-			///*
-			data_map["a"] = -100.f;
-			data_map["b"] = 1.f;
-			data_map["c"] = 11.f;
-			//*/
-			/*
-			data_map["a"] = -1.f;
-			data_map["b"] = -1.f;
-			data_map["c"] = -1.f;
-			data_map["d"] = -1.f;
-			data_map["e"] = -1.f;
-			data_map["f"] = -1.f;
-			*/
-			puts("perform the question mark expression:");
-			try {printf("%f\n", (*exp)(data_map));}
+			try
+			{
+				///*
+				data_map["a"] = -100.f;
+				data_map["b"] = 1.f;
+				data_map["c"] = 11.f;
+				//*/
+				/*
+				data_map["a"] = -1.f;
+				data_map["b"] = -1.f;
+				data_map["c"] = -1.f;
+				data_map["d"] = -1.f;
+				data_map["e"] = -1.f;
+				data_map["f"] = -1.f;
+				*/
+				puts("perform the question mark expression:");
+				printf("%f\n", (*exp)(data_map));
+
+				data_map["a"] = 100.f;
+				data_map["b"] = -1.f;
+				data_map["c"] = -11.f;
+				/*
+				data_map["a"] = -1.f;
+				data_map["b"] = -1.f;
+				data_map["c"] = -1.f;
+				data_map["d"] = -1.f;
+				data_map["e"] = -1.f;
+				data_map["f"] = -1.f;
+				*/
+				puts("perform the question mark expression again:");
+				printf("%f\n", (*exp)(data_map));
+			}
 			catch (const std::exception& e) {puts(e.what());}
 			catch (const std::string& e) {puts(e.data());}
 			catch (const char* e) {puts(e);}
