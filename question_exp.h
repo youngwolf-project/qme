@@ -12,6 +12,40 @@
 namespace qme
 {
 
+/////////////////////////////////////////////////////////////////////////////////////////
+inline bool is_operator_1(const char* input) {return '+' == *input || '-' == *input;}
+inline bool is_operator_1(const std::string& input) {return is_operator_1(input.data());}
+inline bool is_operator_2(const char* input) {return '*' == *input || '/' == *input;}
+inline bool is_operator_2(const std::string& input) {return is_operator_2(input.data());}
+inline bool is_operator(const char* input) {return is_operator_1(input) || is_operator_2(input);}
+inline bool is_operator(const std::string& input) {return is_operator(input.data());}
+
+inline bool is_comparer(const char* input)
+{
+	return '>' == *input || '<' == *input ||
+		0 == strncmp(input, ">=", 2) || 0 == strncmp(input, "<=", 2) ||
+		0 == strncmp(input, "==", 2) || 0 == strncmp(input, "!=", 2);
+}
+inline bool is_comparer(const std::string& input) {return is_comparer(input.data());}
+
+inline bool is_logical_operator(const char* input) {return 0 == strncmp(input, "&&", 2) || 0 == strncmp(input, "||", 2);}
+inline bool is_logical_operator(const std::string& input) {return is_logical_operator(input.data());}
+
+inline bool is_key_1(const char* input)
+{
+	return '!' == *input || '(' == *input || ')' == *input || is_operator(input) ||
+		'>' == *input || '<' == *input || '?' == *input || ':' == *input;
+}
+inline bool is_key_1(const std::string& input) {return is_key_1(input.data());}
+
+inline bool is_key_2(const char* input)
+{
+	return 0 == strncmp(input, ">=", 2) || 0 == strncmp(input, "<=", 2) ||
+		0 == strncmp(input, "==", 2) || 0 == strncmp(input, "!=", 2) || is_logical_operator(input);
+}
+inline bool is_key_2(const std::string& input) {return is_key_2(input.data());}
+/////////////////////////////////////////////////////////////////////////////////////////
+
 class exp
 {
 public:
@@ -29,6 +63,8 @@ public:
 	virtual bool is_immediate() const {return false;}
 	virtual T get_immediate_value() const {return 0;}
 	virtual bool merge_immediate_value(const std::shared_ptr<data_exp<T>>&, char op) {return false;}
+	virtual void show_immediate_value() const {if (is_immediate()) std::cout << "  " << get_immediate_value() << std::endl;}
+	virtual std::shared_ptr<data_exp<T>> trim_myself() {return std::shared_ptr<data_exp<T>>();}
 
 	virtual T operator()(const std::map<std::string, T>&) const = 0;
 };
@@ -38,21 +74,114 @@ public:
 template <typename T = float> class binary_data_exp : public data_exp<T>
 {
 public:
-	binary_data_exp(const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r) :
-		dexp_l(_dexp_l), dexp_r(_dexp_r) {}
+	binary_data_exp(const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r, char _op) :
+		op(_op), dexp_l(_dexp_l), dexp_r(_dexp_r) {}
 
-	virtual bool merge_immediate_value(const std::shared_ptr<data_exp<T>>& other_exp, char op)
-		{return dexp_l->merge_immediate_value(other_exp, op) || dexp_r->merge_immediate_value(other_exp, op);}
+	virtual bool merge_immediate_value(const std::shared_ptr<data_exp<T>>& other_exp, char other_op)
+	{
+		if (is_operator_1(&op) && is_operator_1(&other_op) || is_operator_2(&op) && is_operator_2(&other_op))
+		{
+			if (dexp_l->merge_immediate_value(other_exp, other_op))
+				return true;
+			if ('+' == op || '*' == op)
+			{
+				if (dexp_r->merge_immediate_value(other_exp, other_op))
+					return true;
+			}
+			else if ('+' == other_op)
+			{
+				if (dexp_r->merge_immediate_value(other_exp, '-'))
+					return true;
+			}
+			else if ('-' == other_op)
+			{
+				if (dexp_r->merge_immediate_value(other_exp, '+'))
+					return true;
+			}
+			else if ('*' == other_op)
+			{
+				if (dexp_r->merge_immediate_value(other_exp, '/'))
+					return true;
+			}
+			else if (dexp_r->merge_immediate_value(other_exp, '*')) //must be /
+				return true;
+
+			if ('+' == other_op || '*' == other_op && op == other_op)
+			{
+				if (other_exp->merge_immediate_value(dexp_l, op))
+				{
+					dexp_l = other_exp;
+					return true;
+				}
+				else if (other_exp->merge_immediate_value(dexp_r, op))
+				{
+					dexp_r = other_exp;
+					return true;
+				}
+			}
+			//todo, handle - and / operators
+		}
+
+		return false;
+	}
+
+	virtual void show_immediate_value() const {dexp_l->show_immediate_value(); dexp_r->show_immediate_value();}
+
+	virtual std::shared_ptr<data_exp<T>> trim_myself()
+	{
+		auto data = dexp_l->trim_myself();
+		if (data)
+			dexp_l = data;
+
+		data = dexp_r->trim_myself();
+		if (data)
+			dexp_r = data;
+
+		switch (op)
+		{
+		case '+':
+		case '-':
+			if (dexp_l->is_immediate() && 0 == dexp_l->get_immediate_value())
+				return dexp_r;
+			else if (dexp_r->is_immediate() && 0 == dexp_r->get_immediate_value())
+				return dexp_l;
+			break;
+		case '*':
+			if (dexp_l->is_immediate())
+			{
+				if (1 == dexp_l->get_immediate_value())
+					return dexp_r;
+				else if (0 == dexp_l->get_immediate_value())
+					return dexp_l;
+			}
+			if (dexp_r->is_immediate())
+			{
+				if (1 == dexp_r->get_immediate_value())
+					return dexp_l;
+				else if (0 == dexp_r->get_immediate_value())
+					return dexp_r;
+			}
+			break;
+		case '/':
+			if (dexp_l->is_immediate() && 0 == dexp_l->get_immediate_value() ||
+				dexp_r->is_immediate() && 1 == dexp_r->get_immediate_value())
+				return dexp_l;
+			break;
+		}
+
+		return std::shared_ptr<data_exp<T>>();
+	}
 
 protected:
+	char op;
 	std::shared_ptr<data_exp<T>> dexp_l, dexp_r;
 };
 
 template <typename T = float> class add_data_exp : public binary_data_exp<T>
 {
 public:
-	add_data_exp(const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r) :
-		binary_data_exp<T>(_dexp_l, _dexp_r) {}
+	add_data_exp(const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r, char _op) :
+		binary_data_exp<T>(_dexp_l, _dexp_r, _op) {}
 
 	virtual T operator()(const std::map<std::string, T>& data_map) const {return (*this->dexp_l)(data_map) + (*this->dexp_r)(data_map);}
 };
@@ -60,8 +189,8 @@ public:
 template <typename T = float> class sub_data_exp : public binary_data_exp<T>
 {
 public:
-	sub_data_exp(const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r) :
-		binary_data_exp<T>(_dexp_l, _dexp_r) {}
+	sub_data_exp(const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r, char _op) :
+		binary_data_exp<T>(_dexp_l, _dexp_r, _op) {}
 
 	virtual T operator()(const std::map<std::string, T>& data_map) const {return (*this->dexp_l)(data_map) - (*this->dexp_r)(data_map);}
 };
@@ -69,8 +198,8 @@ public:
 template <typename T = float> class multi_data_exp : public binary_data_exp<T>
 {
 public:
-	multi_data_exp(const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r) :
-		binary_data_exp<T>(_dexp_l, _dexp_r) {}
+	multi_data_exp(const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r, char _op) :
+		binary_data_exp<T>(_dexp_l, _dexp_r, _op) {}
 
 	virtual T operator()(const std::map<std::string, T>& data_map) const {return (*this->dexp_l)(data_map) * (*this->dexp_r)(data_map);}
 };
@@ -78,8 +207,8 @@ public:
 template <typename T = float> class div_data_exp : public binary_data_exp<T>
 {
 public:
-	div_data_exp(const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r) :
-		binary_data_exp<T>(_dexp_l, _dexp_r) {}
+	div_data_exp(const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r, char _op) :
+		binary_data_exp<T>(_dexp_l, _dexp_r, _op) {}
 
 	virtual T operator()(const std::map<std::string, T>& data_map) const {return (*this->dexp_l)(data_map) / (*this->dexp_r)(data_map);}
 };
@@ -129,6 +258,8 @@ template <typename T = float> class negative_data_exp : public data_exp<T>
 public:
 	negative_data_exp(const std::shared_ptr<data_exp<T>>& _dexp) : dexp(_dexp) {}
 
+	virtual void show_immediate_value() const {dexp->show_immediate_value();}
+
 	virtual T operator()(const std::map<std::string, T>& data_map) const {return -(*dexp)(data_map);}
 
 protected:
@@ -146,7 +277,7 @@ public:
 		typename std::map<std::string, T>::const_iterator iter = data_map.find(variable_name);
 		if (iter != data_map.end())
 		{
-			std::cout << "get " << variable_name << " returns " << iter->second << std::endl;
+			std::cout << " get " << variable_name << " returns " << iter->second << std::endl;
 			return iter->second;
 		}
 
@@ -158,21 +289,64 @@ private:
 };
 
 template <typename T = float>
-inline std::shared_ptr<data_exp<T>> merge_data_exp(const std::shared_ptr<data_exp<T>>& exp_l, const std::shared_ptr<data_exp<T>>& exp_r, const std::string& op)
+inline std::shared_ptr<data_exp<T>> make_negative_data_exp(const std::shared_ptr<data_exp<T>>& dexp)
 {
+	if (dexp->is_immediate())
+		return std::make_shared<immediate_data_exp<T>>(-dexp->get_immediate_value());
+
+	return std::make_shared<negative_data_exp<T>>(dexp);
+}
+
+template <typename T = float>
+inline std::shared_ptr<data_exp<T>> merge_data_exp(const std::shared_ptr<data_exp<T>>& dexp_l, const std::shared_ptr<data_exp<T>>& dexp_r, const std::string& op)
+{
+	if (dexp_l->merge_immediate_value(dexp_r, op[0]))
+	{
+		auto data = dexp_l->trim_myself();
+		return data ? data : dexp_l;
+	}
+	else if (('+' == op[0] || '*' == op[0]) && dexp_r->merge_immediate_value(dexp_l, op[0]))
+	{
+		auto data = dexp_r->trim_myself();
+		return data ? data : dexp_r;
+	}
+	//todo, handle / operators
+
 	switch (op[0])
 	{
 	case '+':
-		return std::make_shared<add_data_exp<T>>(exp_l, exp_r);
-		break;
 	case '-':
-		return std::make_shared<sub_data_exp<T>>(exp_l, exp_r);
+		if (dexp_l->is_immediate() && 0 == dexp_l->get_immediate_value())
+			return dexp_r;
+		else if (dexp_r->is_immediate() && 0 == dexp_r->get_immediate_value())
+			return dexp_l;
+		if ('+' == op[0])
+			return std::make_shared<add_data_exp<T>>(dexp_l, dexp_r, op[0]);
+		else
+			return std::make_shared<sub_data_exp<T>>(dexp_l, dexp_r, op[0]);
 		break;
 	case '*':
-		return std::make_shared<multi_data_exp<T>>(exp_l, exp_r);
+		if (dexp_l->is_immediate())
+		{
+			if (1 == dexp_l->get_immediate_value())
+				return dexp_r;
+			else if (0 == dexp_l->get_immediate_value())
+				return dexp_l;
+		}
+		if (dexp_r->is_immediate())
+		{
+			if (1 == dexp_r->get_immediate_value())
+				return dexp_l;
+			else if (0 == dexp_r->get_immediate_value())
+				return dexp_r;
+		}
+		return std::make_shared<multi_data_exp<T>>(dexp_l, dexp_r, op[0]);
 		break;
 	case '/':
-		return std::make_shared<div_data_exp<T>>(exp_l, exp_r);
+		if (dexp_l->is_immediate() && 0 == dexp_l->get_immediate_value() ||
+			dexp_r->is_immediate() && 1 == dexp_r->get_immediate_value())
+			return dexp_l;
+		return std::make_shared<div_data_exp<T>>(dexp_l, dexp_r, op[0]);
 		break;
 	default:
 		throw(("undefined operator " + op).data());
@@ -333,7 +507,7 @@ template <typename T = float> class question_exp : public binary_data_exp<T>
 {
 public:
 	question_exp(const std::shared_ptr<judge_exp<T>>& _jexp, const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r) :
-		binary_data_exp<T>(_dexp_l, _dexp_r), jexp(_jexp) {}
+		binary_data_exp<T>(_dexp_l, _dexp_r, '\0'), jexp(_jexp) {}
 
 	virtual T operator()(const std::map<std::string, T>& data_map) const {return (*jexp)(data_map) ? (*this->dexp_l)(data_map) : (*this->dexp_r)(data_map);}
 
@@ -354,38 +528,6 @@ private:
 	};
 
 public:
-	static bool is_operator_1(const char* input) {return '+' == *input || '-' == *input;}
-	static bool is_operator_1(const std::string& input) {return is_operator_1(input.data());}
-	static bool is_operator_2(const char* input) {return '*' == *input || '/' == *input;}
-	static bool is_operator_2(const std::string& input) {return is_operator_2(input.data());}
-	static bool is_operator(const char* input) {return is_operator_1(input) || is_operator_2(input);}
-	static bool is_operator(const std::string& input) {return is_operator(input.data());}
-
-	static bool is_comparer(const char* input)
-	{
-		return '>' == *input || '<' == *input ||
-			0 == strncmp(input, ">=", 2) || 0 == strncmp(input, "<=", 2) ||
-			0 == strncmp(input, "==", 2) || 0 == strncmp(input, "!=", 2);
-	}
-	static bool is_comparer(const std::string& input) {return is_comparer(input.data());}
-
-	static bool is_logical_operator(const char* input) {return 0 == strncmp(input, "&&", 2) || 0 == strncmp(input, "||", 2);}
-	static bool is_logical_operator(const std::string& input) {return is_logical_operator(input.data());}
-
-	static bool is_key_1(const char* input)
-	{
-		return '!' == *input || '(' == *input || ')' == *input || is_operator(input) ||
-			'>' == *input || '<' == *input || '?' == *input || ':' == *input;
-	}
-	static bool is_key_1(const std::string& input) {return is_key_1(input.data());}
-
-	static bool is_key_2(const char* input)
-	{
-		return 0 == strncmp(input, ">=", 2) || 0 == strncmp(input, "<=", 2) ||
-			0 == strncmp(input, "==", 2) || 0 == strncmp(input, "!=", 2) || is_logical_operator(input);
-	}
-	static bool is_key_2(const std::string& input) {return is_key_2(input.data());}
-
 	static std::shared_ptr<data_exp<T>> parse(const char* statement) {return parse(std::string(statement));}
 	static std::shared_ptr<data_exp<T>> parse(const std::string& statement)
 	{
@@ -436,10 +578,10 @@ public:
 
 			if (!sub_exps.empty())
 			{
-				printf("get %s from %s, where:\n", expression.data(), old_exp.data());
+				printf(" get %s from %s, where:\n", expression.data(), old_exp.data());
 				for (auto& item : sub_exps)
 				{
-					printf("%s = %s\n", item.first.data(), item.second.raw_exp.data());
+					printf("  %s = %s\n", item.first.data(), item.second.raw_exp.data());
 					item.second.items = split(item.second.raw_exp);
 				}
 
@@ -459,11 +601,14 @@ public:
 			}
 
 			auto items = split(expression);
-			auto re = parse(items, sub_exps);
-			if (!re || !re->is_data())
+			auto exp = parse(items, sub_exps);
+			if (!exp || !exp->is_data())
 				throw("incomplete judgement!");
 
-			return std::dynamic_pointer_cast<data_exp<T>>(re);
+			auto re = std::dynamic_pointer_cast<data_exp<T>>(exp);
+			puts(" immediate values:");
+			re->show_immediate_value();
+			return re;
 		}
 		catch (const std::exception& e) {puts(e.what());}
 		catch (const std::string& e) {puts(e.data());}
@@ -476,7 +621,7 @@ public:
 private:
 	static void pre_parse_1(std::string& expression)
 	{
-		printf("pre-parsing phase 1 from [%s] ", expression.data());
+		printf(" pre-parsing phase 1 from [%s] ", expression.data());
 
 		char blanks[] = {' ', '\t', '\n', '\r'};
 		for (auto& c : blanks)
@@ -504,7 +649,8 @@ private:
 		auto p_start = std::string::npos;
 		while (index < end_index)
 		{
-			if ('(' == expression[index])
+			auto c = expression[index];
+			if ('(' == c)
 			{
 				if (std::string::npos == p_start)
 				{
@@ -514,7 +660,7 @@ private:
 				else
 					pre_parse_2(expression, sub_exps, index, end_index, p_num, level + 1);
 			}
-			else if (')' == expression[index])
+			else if (')' == c)
 			{
 				if (std::string::npos == p_start)
 				{
@@ -530,7 +676,7 @@ private:
 				sub_exps[name] = sub_exp {name, raw_exp};
 
 				auto old_size = expression.size();
-				printf("pre-parsing phase 2 from [%s] ", expression.data());
+				printf(" pre-parsing phase 2 from [%s] ", expression.data());
 				expression.replace(p_start, raw_exp.size() + 2, name);
 				printf("to [%s]\n", expression.data());
 
@@ -559,7 +705,8 @@ private:
 		size_t q_pos = 0, c_pos = 0, start = index;
 		while (index < end_index)
 		{
-			if ('?' == expression[index])
+			auto c = expression[index];
+			if ('?' == c)
 			{
 				if (0 == q_pos)
 				{
@@ -578,9 +725,9 @@ private:
 						changed = true;
 				}
 			}
-			else if (':' == expression[index] || index + 1 == end_index)
+			else if (':' == c || index + 1 == end_index)
 			{
-				auto is_c = ':' == expression[index];
+				auto is_c = ':' == c;
 				if (!is_c)
 					++index;
 
@@ -599,7 +746,7 @@ private:
 					sub_exps[name] = sub_exp {name, raw_exp};
 
 					auto old_size = expression.size();
-					printf("pre-parsing phase 3 from [%s] ", expression.data());
+					printf(" pre-parsing phase 3 from [%s] ", expression.data());
 					expression.replace(start, index - start, name);
 					printf("to [%s]\n", expression.data());
 
@@ -780,7 +927,7 @@ private:
 			throw("empty expresson!");
 
 		auto revert = 0;
-		auto negative = false, is_q = false, is_c = false;
+		auto negative = false, positive = false, is_q = false, is_c = false;
 		std::shared_ptr<data_exp<T>> data_1, data_2;
 		std::string op_1, op_2;
 		std::shared_ptr<judge_exp<T>> judge_1, judge_2;
@@ -791,7 +938,8 @@ private:
 
 		while (index < end_index)
 		{
-			if ("!" == items[index])
+			const auto& item = items[index];
+			if ("!" == item)
 			{
 				if (is_q || is_c)
 					throw("only arithmetic operator can appears after ? or : operator!");
@@ -800,30 +948,30 @@ private:
 				++index;
 				continue;
 			}
-			else if (is_operator(items[index]))
+			else if (is_operator(item))
 			{
 				if (data_2)
 				{
 					if (!op_2.empty())
 						throw("redundant operator!");
 
-					if (is_operator_1(items[index]))
+					if (is_operator_1(item))
 					{
 						data_1 = merge_data_exp(data_1, data_2, op_1);
-						op_1 = items[index];
+						op_1 = item;
 						data_2.reset();
 					}
 					else
-						op_2 = items[index];
+						op_2 = item;
 				}
 				else if (data_1)
 				{
 					if (!op_1.empty())
 						throw("redundant operator!");
 
-					op_1 = items[index];
+					op_1 = item;
 				}
-				else if ("-" == items[index])
+				else if ("-" == item)
 				{
 					if (negative)
 						throw("redundant - operator!");
@@ -834,20 +982,31 @@ private:
 						continue;
 					}
 				}
+				else if ("+" == item)
+				{
+					if (positive)
+						throw("redundant + operator!");
+					else
+					{
+						positive = true;
+						++index;
+						continue;
+					}
+				}
 				else
 					throw("missing operand!");
 			}
-			else if (is_comparer(items[index]))
+			else if (is_comparer(item))
 			{
 				if (is_q || is_c)
 					throw("only arithmetic operator can appears after ? or : operator!");
 				else if (!c.empty() || dc)
 					throw("redundant comparer!");
 
-				c = items[index];
+				c = item;
 				finish_data_exp(data_1, data_2, op_1, op_2, dc);
 			}
-			else if (is_logical_operator(items[index]))
+			else if (is_logical_operator(item))
 			{
 				if (is_q || is_c)
 					throw("only arithmetic operator can appears after ? or : operator!");
@@ -865,26 +1024,26 @@ private:
 					if (!lop_2.empty())
 						throw("redundant logical operator!");
 
-					if ("||" == items[index])
+					if ("||" == item)
 					{
 						judge_1 = qme::merge_judge_exp(judge_1, judge_2, lop_1);
-						lop_1 = items[index];
+						lop_1 = item;
 						judge_2.reset();
 					}
 					else
-						lop_2 = items[index];
+						lop_2 = item;
 				}
 				else if (judge_1)
 				{
 					if (!lop_1.empty())
 						throw("redundant logical operator!");
 
-					lop_1 = items[index];
+					lop_1 = item;
 				}
 				else
 					throw("missing logical operand!");
 			}
-			else if ("?" == items[index])
+			else if ("?" == item)
 			{
 				if (is_q)
 					throw("redundant ? operator!");
@@ -901,7 +1060,7 @@ private:
 
 				finish_judge_exp(judge_1, judge_2, lop_1, lop_2);
 			}
-			else if (":" == items[index])
+			else if (":" == item)
 			{
 				if (!is_q)
 					throw("missing ? operator!");
@@ -917,18 +1076,18 @@ private:
 			else
 			{
 				std::shared_ptr<exp> parsed_exp;
-				if ('$' == items[index][0])
+				if ('$' == item[0])
 				{
-					auto iter = sub_exps.find(items[index]);
+					auto iter = sub_exps.find(item);
 					if (iter == std::end(sub_exps))
-						throw("undefined symbol " + items[index]);
+						throw("undefined symbol " + item);
 					else if (!iter->second.parsed_exp) //dependancy not ready
 						return std::shared_ptr<exp>();
 					else
 						parsed_exp = iter->second.parsed_exp;
 				}
 				else
-					parsed_exp = parse_data(items[index]);
+					parsed_exp = parse_data(item);
 
 				if (revert > 0)
 				{
@@ -952,8 +1111,9 @@ private:
 					if (negative)
 					{
 						negative = false;
-						data = std::make_shared<negative_data_exp<T>>(data);
+						data = make_negative_data_exp(data);
 					}
+					positive = false;
 
 					if (data_2)
 					{
@@ -989,6 +1149,8 @@ private:
 				throw("unexpected ! operator!");
 			else if (negative)
 				throw("unexpected - operator!");
+			else if (positive)
+				throw("unexpected + operator!");
 
 			++index;
 		}

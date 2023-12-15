@@ -1,20 +1,68 @@
 
 #include "question_exp.h"
 
+#ifdef __linux__
+#include <sys/time.h>
+void print_time_spend(const struct timeval& begin)
+{
+	struct timeval end;
+	gettimeofday(&end, nullptr);
+
+	auto seconds = end.tv_sec - begin.tv_sec;
+	auto microseconds = end.tv_usec - begin.tv_usec;
+	if (microseconds < 0)
+	{
+		--seconds;
+		microseconds += 1000000000;
+	}
+	printf("spent %ld seconds %ld microseconds\n", seconds, microseconds);
+}
+#endif
+
 int main(int argc, const char* argv[])
 {
 	const char* const inputs[] = {
-		"(a + b > 0 && b > 0 || c > 0) ? ((a > 0 && b > 0) ? a + b + 1 : - c + 1 + 2) : ((a < 0 || b < 0) ? a - b : c)",
+		//test merging of immediate values at compilation time
+		"a != 0 ? a + 1 + 2 + 3 : 0", //immediate values: 6, 0
+		"+(a + 1) == 0 ? a + 1 / 2 + 3 : 0", //immediate values: 3.5, 0
+		"-a > 0 ? a / 1 / 2 + 3 : 0", //immediate values: 2, 3, 0
+		"a ? a / 1 + 2 + 3 : 0", //immediate values: 5, 0
+		"a ? (a + 1) + 2 + 3 : 0", //immediate values: 6, 0
+		"a ? (a + 1) + (2 + 3) : 0", //immediate values: 6, 0
+		"a ? ((a + 1) + (2 + 3)) : 0", //immediate values: 6, 0
+		"a ? a + 1 + b + 1 : 0", //immediate values: 2, 0
+		"a ? a - 1 - b - 1 : 0", //immediate values: 2, 0
+		"a ? a - 1 + b - 1 : 0", //immediate values: 2, 0
+		"a ? (a + 1) + b + 1 : 0", //immediate values: 2, 0
+		"a ? a + 1 + (b + 1) : 0", //immediate values: 2, 0
+		"a ? (a + 1) + (b + 1) : 0", //immediate values: 2, 0
+		"a ? 2 + (b + 2) : 0", //immediate values: 4, 0
+		"a ? 3 * (b * 3) : 0", //immediate values: 9, 0
+		"a ? 3 * (b / 3) : 0", //immediate values: 0
+		"a ? (b - 2) + 3 : 0", //immediate values: -1, 0
+		"a ? 3 + (b - 2) : 0", //immediate values: -1, 0
+		"a ? 3 + (b - 3) : 0", //immediate values: 0
+
+		//following expressions cannot eliminate/merge immediate successfully, they have the same format --
+		// operator - or / followed by parentheses, of with negative operators
+		"a ? 2 - (b + 2) : 0", //immediate values: 2, 2, 0 (it's hard to fix this defect -- to be 0, 0, or just 0)
+		"a ? 2 - (b - 2) : 0", //immediate values: 2, 2, 0 (it's hard to fix this defect --to be 4, 0 )
+		"a ? 3 / (b * 3) : 0", //immediate values: 3, 3, 0 (it's hard to fix this defect -- to be just 0)
+		"a ? 3 / (b / 3) : 0", //immediate values: 3, 3, 0 (it's hard to fix this defect -- to be 9, 0)
+		"a ? -(b + 2) + 2 : 0", //immediate values: 2, 2, 0 (it's hard to fix this defect -- to be 0, 0, or just 0)
+///*
+		//normal test
+		"(a + b > 0 && b > 0 || c > 0) ? ((a > 0 && b > 0) ? +a + b + 1 : - c + 1 + 2) : ((a < 0 || b < 0) ? a - b : c)",
 		"a > 0 ? b > 0 ? b : 10 : c > 0 ? c : 100",
 		"a > 0 ? b > 0 ? c > 0 ? c : 1 : 2 : 3",
 		"a > 0 ? a : b > 0 ? b : 10",
 		"a < 0 ? (b < 0 ? b : c > 0 ? c : 10) : (a + b > 0 ? a - b : c)",
 		"(a > 0) ? a + 1 : b",
 		"(-a > 0) ? a + 1 : b",
-		"!a ? a : b",
+		"!a ? +a : -b",
 		"!!a ? a : b",
 		"(!!a) ? a : b",
-		"a + b",
+		"+a + b",
 		"a",
 		"!(a > 0) ? a : b",
 		"a && b ? a : -1.11",
@@ -30,6 +78,7 @@ int main(int argc, const char* argv[])
 		"a : b",
 		"(a >) 0 ? a : b",
 		"-(a > 0) ? a : b",
+		"+(a > 0) ? a : b",
 		"(a > 0) ? a : b +",
 		"(a > 0) ? a + : b",
 		"a : b ? c : 0",
@@ -39,10 +88,19 @@ int main(int argc, const char* argv[])
 		"a! > 0 ? a : b",
 		"!(a > 0) ? a : b : c",
 		"!(a > 0) ? a : b : c : 0",
+//*/
 	};
 	for (size_t i = 0; i < sizeof(inputs) / sizeof(const char*); ++i)
 	{
+#ifdef __linux__
+		puts("compile the question mark expression:");
+		struct timeval begin;
+		gettimeofday(&begin, nullptr);
 		auto exp = qme::question_exp_parser<>::parse(inputs[i]);
+		print_time_spend(begin);
+#else
+		auto exp = qme::question_exp_parser<>::parse(inputs[i]);
+#endif
 		if (exp)
 		{
 			std::map<std::string, float> data_map;
@@ -62,7 +120,13 @@ int main(int argc, const char* argv[])
 				data_map["f"] = -1.f;
 				*/
 				puts("perform the question mark expression:");
-				printf("%f\n", (*exp)(data_map));
+#ifdef __linux__
+				gettimeofday(&begin, nullptr);
+				printf(" %f\n", (*exp)(data_map));
+				print_time_spend(begin);
+#else
+				printf(" %f\n", (*exp)(data_map));
+#endif
 
 				data_map["a"] = 100.f;
 				data_map["b"] = -1.f;
@@ -76,7 +140,13 @@ int main(int argc, const char* argv[])
 				data_map["f"] = -1.f;
 				*/
 				puts("perform the question mark expression again:");
-				printf("%f\n", (*exp)(data_map));
+#ifdef __linux__
+				gettimeofday(&begin, nullptr);
+				printf(" %f\n", (*exp)(data_map));
+				print_time_spend(begin);
+#else
+				printf(" %f\n", (*exp)(data_map));
+#endif
 			}
 			catch (const std::exception& e) {puts(e.what());}
 			catch (const std::string& e) {puts(e.data());}
