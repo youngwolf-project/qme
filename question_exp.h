@@ -277,7 +277,9 @@ public:
 		typename std::map<std::string, T>::const_iterator iter = data_map.find(variable_name);
 		if (iter != data_map.end())
 		{
+#ifdef DEBUG
 			std::cout << " get " << variable_name << " returns " << iter->second << std::endl;
+#endif
 			return iter->second;
 		}
 
@@ -578,13 +580,17 @@ public:
 
 			if (!sub_exps.empty())
 			{
+#ifdef DEBUG
 				printf(" get %s from %s, where:\n", expression.data(), old_exp.data());
 				for (auto& item : sub_exps)
 				{
 					printf("  %s = %s\n", item.first.data(), item.second.raw_exp.data());
 					item.second.items = split(item.second.raw_exp);
 				}
-
+#else
+				for (auto& item : sub_exps)
+					item.second.items = split(item.second.raw_exp);
+#endif
 				while(true)
 				{
 					auto parsed_num = 0;
@@ -606,8 +612,10 @@ public:
 				throw("incomplete judgement!");
 
 			auto re = std::dynamic_pointer_cast<data_exp<T>>(exp);
+#ifdef DEBUG
 			puts(" immediate values:");
 			re->show_immediate_value();
+#endif
 			return re;
 		}
 		catch (const std::exception& e) {puts(e.what());}
@@ -621,7 +629,9 @@ public:
 private:
 	static void pre_parse_1(std::string& expression)
 	{
+#ifdef DEBUG
 		printf(" pre-parsing phase 1 from [%s] ", expression.data());
+#endif
 
 		char blanks[] = {' ', '\t', '\n', '\r'};
 		for (auto& c : blanks)
@@ -637,7 +647,9 @@ private:
 			}
 		}
 
+#ifdef DEBUG
 		printf("to [%s]\n", expression.data());
+#endif
 	}
 
 	static void pre_parse_2(std::string& expression, std::map<std::string, sub_exp>& sub_exps,
@@ -676,10 +688,13 @@ private:
 				sub_exps[name] = sub_exp {name, raw_exp};
 
 				auto old_size = expression.size();
+#ifdef DEBUG
 				printf(" pre-parsing phase 2 from [%s] ", expression.data());
 				expression.replace(p_start, raw_exp.size() + 2, name);
 				printf("to [%s]\n", expression.data());
-
+#else
+				expression.replace(p_start, raw_exp.size() + 2, name);
+#endif
 				auto size_change = old_size - expression.size();
 				index -= size_change;
 				end_index -= size_change;
@@ -746,10 +761,13 @@ private:
 					sub_exps[name] = sub_exp {name, raw_exp};
 
 					auto old_size = expression.size();
+#ifdef DEBUG
 					printf(" pre-parsing phase 3 from [%s] ", expression.data());
 					expression.replace(start, index - start, name);
 					printf("to [%s]\n", expression.data());
-
+#else
+					expression.replace(start, index - start, name);
+#endif
 					auto size_change = old_size - expression.size();
 					index -= size_change;
 					end_index -= size_change;
