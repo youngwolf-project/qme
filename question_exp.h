@@ -13,12 +13,16 @@ namespace qme
 {
 
 /////////////////////////////////////////////////////////////////////////////////////////
+inline bool is_operator_1(char input) {return '+' == input || '-' == input;}
 inline bool is_operator_1(const char* input) {return '+' == *input || '-' == *input;}
 inline bool is_operator_1(const std::string& input) {return is_operator_1(input.data());}
+inline bool is_operator_2(char input) {return '*' == input || '/' == input;}
 inline bool is_operator_2(const char* input) {return '*' == *input || '/' == *input;}
 inline bool is_operator_2(const std::string& input) {return is_operator_2(input.data());}
 inline bool is_operator(const char* input) {return is_operator_1(input) || is_operator_2(input);}
 inline bool is_operator(const std::string& input) {return is_operator(input.data());}
+inline bool is_same_operator_level(char op_1, char op_2)
+	{return is_operator_1(op_1) && is_operator_1(op_2) || is_operator_2(op_1) && is_operator_2(op_2);}
 
 inline bool is_comparer(const char* input)
 {
@@ -61,29 +65,45 @@ template <typename T = float> class data_exp : public exp
 public:
 	virtual bool is_data() const {return true;}
 	virtual bool is_immediate() const {return false;}
-	virtual T get_immediate_value() const {return 0;}
-	virtual bool merge_immediate_value(const std::shared_ptr<data_exp<T>>&, char op) {return false;}
-	virtual void show_immediate_value() const {if (is_immediate()) std::cout << "  " << get_immediate_value() << std::endl;}
+	virtual bool is_negative() const {return false;}
+	virtual bool is_composite() const {return false;}
+	virtual char get_operator() const {throw("unsupported get operator operation!");}
+	virtual T get_immediate_value() const {throw("unsupported get immediate value operation!");}
+	virtual std::shared_ptr<data_exp<T>> get_1st_data() const {throw("unsupported get 1st data operation!");}
+	virtual std::shared_ptr<data_exp<T>> get_2nd_data() const {throw("unsupported get 2nd data operation!");}
+
+	virtual void show_immediate_value() const {}
+	virtual bool merge_immediate_value(const std::shared_ptr<data_exp<T>>&, char) {return false;}
 	virtual std::shared_ptr<data_exp<T>> trim_myself() {return std::shared_ptr<data_exp<T>>();}
+	virtual std::shared_ptr<data_exp<T>> to_negative() const = 0;
 
 	virtual T operator()(const std::map<std::string, T>&) const = 0;
 };
 /////////////////////////////////////////////////////////////////////////////////////////
 
 /////////////////////////////////////////////////////////////////////////////////////////
+template <typename T = float>
+inline std::shared_ptr<data_exp<T>> merge_data_exp(const std::shared_ptr<data_exp<T>>&, const std::shared_ptr<data_exp<T>>&, char);
+
 template <typename T = float> class binary_data_exp : public data_exp<T>
 {
 public:
 	binary_data_exp(const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r, char _op) :
 		op(_op), dexp_l(_dexp_l), dexp_r(_dexp_r) {}
 
+	virtual bool is_composite() const {return true;}
+	virtual char get_operator() const {return op;}
+	virtual std::shared_ptr<data_exp<T>> get_1st_data() const {return dexp_l;}
+	virtual std::shared_ptr<data_exp<T>> get_2nd_data() const {return dexp_r;}
+
+	virtual void show_immediate_value() const {dexp_l->show_immediate_value(); dexp_r->show_immediate_value();}
 	virtual bool merge_immediate_value(const std::shared_ptr<data_exp<T>>& other_exp, char other_op)
 	{
-		if (is_operator_1(&op) && is_operator_1(&other_op) || is_operator_2(&op) && is_operator_2(&other_op))
+		if (is_same_operator_level(op, other_op))
 		{
 			if (dexp_l->merge_immediate_value(other_exp, other_op))
 				return true;
-			if ('+' == op || '*' == op)
+			else if ('+' == op || '*' == op)
 			{
 				if (dexp_r->merge_immediate_value(other_exp, other_op))
 					return true;
@@ -105,27 +125,10 @@ public:
 			}
 			else if (dexp_r->merge_immediate_value(other_exp, '*')) //must be /
 				return true;
-
-			if ('+' == other_op || '*' == other_op && op == other_op)
-			{
-				if (other_exp->merge_immediate_value(dexp_l, op))
-				{
-					dexp_l = other_exp;
-					return true;
-				}
-				else if (other_exp->merge_immediate_value(dexp_r, op))
-				{
-					dexp_r = other_exp;
-					return true;
-				}
-			}
-			//todo, handle - and / operators
 		}
 
 		return false;
 	}
-
-	virtual void show_immediate_value() const {dexp_l->show_immediate_value(); dexp_r->show_immediate_value();}
 
 	virtual std::shared_ptr<data_exp<T>> trim_myself()
 	{
@@ -140,11 +143,27 @@ public:
 		switch (op)
 		{
 		case '+':
-		case '-':
 			if (dexp_l->is_immediate() && 0 == dexp_l->get_immediate_value())
 				return dexp_r;
 			else if (dexp_r->is_immediate() && 0 == dexp_r->get_immediate_value())
 				return dexp_l;
+			else if (dexp_r->is_negative())
+				return merge_data_exp(dexp_l, dexp_r->to_negative(), '-');
+			else if (dexp_l->is_negative())
+				return merge_data_exp(dexp_r, dexp_l->to_negative(), '-');
+			break;
+		case '-':
+			if (dexp_l->is_immediate() && 0 == dexp_l->get_immediate_value())
+				return dexp_r->to_negative();
+			else if (dexp_r->is_immediate() && 0 == dexp_r->get_immediate_value())
+				return dexp_l;
+			else if (dexp_r->is_negative())
+			{
+				if (dexp_l->is_negative())
+					return merge_data_exp(dexp_r->to_negative(), dexp_l->to_negative(), '-');
+				else
+					return merge_data_exp(dexp_l, dexp_r->to_negative(), '+');
+			}
 			break;
 		case '*':
 			if (dexp_l->is_immediate())
@@ -161,15 +180,38 @@ public:
 				else if (0 == dexp_r->get_immediate_value())
 					return dexp_r;
 			}
+			if (dexp_l->is_negative() && dexp_r->is_negative())
+				return merge_data_exp(dexp_l->to_negative(), dexp_r->to_negative(), '*');
 			break;
 		case '/':
 			if (dexp_l->is_immediate() && 0 == dexp_l->get_immediate_value() ||
 				dexp_r->is_immediate() && 1 == dexp_r->get_immediate_value())
 				return dexp_l;
+			else if (dexp_l->is_negative() && dexp_r->is_negative())
+				return merge_data_exp(dexp_l->to_negative(), dexp_r->to_negative(), '/');
 			break;
 		}
 
 		return std::shared_ptr<data_exp<T>>();
+	}
+
+	virtual std::shared_ptr<data_exp<T>> to_negative() const
+	{
+		switch (op)
+		{
+		case '+':
+			return merge_data_exp(dexp_l->to_negative(), dexp_r, '-');
+			break;
+		case '-':
+			return merge_data_exp(dexp_r, dexp_l, '-');
+			break;
+		case '*':
+		case '/':
+			return merge_data_exp(dexp_l->to_negative(), dexp_r, op);;
+		default:
+			throw(("undefined operator " + std::string(1, op)).data());
+			break;
+		}
 	}
 
 protected:
@@ -221,12 +263,14 @@ public:
 
 	virtual bool is_immediate() const {return true;}
 	virtual T get_immediate_value() const {return value;}
-	virtual bool merge_immediate_value(const std::shared_ptr<data_exp<T>>& other_exp, char op)
+
+	virtual void show_immediate_value() const {std::cout << "  " << value << std::endl;}
+	virtual bool merge_immediate_value(const std::shared_ptr<data_exp<T>>& other_exp, char other_op)
 	{
 		if (!other_exp->is_immediate())
 			return false;
 
-		switch (op)
+		switch (other_op)
 		{
 		case '+':
 			value += other_exp->get_immediate_value();
@@ -241,11 +285,12 @@ public:
 			value /= other_exp->get_immediate_value();
 			break;
 		default:
-			throw(("undefined operator " + std::string(1, op)).data());
+			throw(("undefined operator " + std::string(1, other_op)).data());
 			break;
 		}
 		return true;
 	}
+	virtual std::shared_ptr<data_exp<T>> to_negative() const {return std::make_shared<immediate_data_exp<T>>(-value);}
 
 	virtual T operator()(const std::map<std::string, T>&) const {return value;}
 
@@ -253,28 +298,46 @@ private:
 	T value;
 };
 
-template <typename T = float> class negative_data_exp : public data_exp<T>
+template <typename T = float> class variable_data_exp;
+template <typename T = float> class negative_data_exp : public variable_data_exp<T>
 {
 public:
-	negative_data_exp(const std::shared_ptr<data_exp<T>>& _dexp) : dexp(_dexp) {}
+	negative_data_exp(const std::string& _variable_name) : variable_data_exp<T>(_variable_name) {}
 
-	virtual void show_immediate_value() const {dexp->show_immediate_value();}
+	virtual bool is_negative() const {return true;}
+	virtual bool merge_immediate_value(const std::shared_ptr<data_exp<T>>& other_exp, char other_op)
+	{
+		if (is_operator_2(other_op))
+		{
+			if (variable_data_exp<T>::merge_immediate_value(other_exp, other_op))
+				return true;
+		}
+		else if ('+' == other_op)
+		{
+			if (variable_data_exp<T>::merge_immediate_value(other_exp, '-'))
+				return true;
+		}
+		else if (variable_data_exp<T>::merge_immediate_value(other_exp, '+'))
+			return true;
 
-	virtual T operator()(const std::map<std::string, T>& data_map) const {return -(*dexp)(data_map);}
+		return false;
+	}
+	virtual std::shared_ptr<data_exp<T>> to_negative() const {return std::make_shared<variable_data_exp<T>>(this->get_variable_name());}
 
-protected:
-	std::shared_ptr<data_exp<T>> dexp;
+	virtual T operator()(const std::map<std::string, T>& data_map) const {return -variable_data_exp<T>::operator()(data_map);}
 };
 
-template <typename T = float> class variable_data_exp : public data_exp<T>
+template <typename T> class variable_data_exp : public data_exp<T>
 {
 public:
-	variable_data_exp() {}
 	variable_data_exp(const std::string& _variable_name) : variable_name(_variable_name) {}
+	const std::string& get_variable_name() const {return variable_name;}
+
+	virtual std::shared_ptr<data_exp<T>> to_negative() const {return std::make_shared<negative_data_exp<T>>(variable_name);}
 
 	virtual T operator()(const std::map<std::string, T>& data_map) const
 	{
-		typename std::map<std::string, T>::const_iterator iter = data_map.find(variable_name);
+		auto iter = data_map.find(variable_name);
 		if (iter != data_map.end())
 		{
 #ifdef DEBUG
@@ -290,71 +353,76 @@ private:
 	std::string variable_name;
 };
 
-template <typename T = float>
-inline std::shared_ptr<data_exp<T>> make_negative_data_exp(const std::shared_ptr<data_exp<T>>& dexp)
+template <typename T = float> inline std::shared_ptr<data_exp<T>> merge_data_exp(
+	const std::shared_ptr<data_exp<T>>& dexp_l, const std::shared_ptr<data_exp<T>>& dexp_r, char op)
 {
-	if (dexp->is_immediate())
-		return std::make_shared<immediate_data_exp<T>>(-dexp->get_immediate_value());
-
-	return std::make_shared<negative_data_exp<T>>(dexp);
-}
-
-template <typename T = float>
-inline std::shared_ptr<data_exp<T>> merge_data_exp(const std::shared_ptr<data_exp<T>>& dexp_l, const std::shared_ptr<data_exp<T>>& dexp_r, const std::string& op)
-{
-	if (dexp_l->merge_immediate_value(dexp_r, op[0]))
+	if (dexp_r->is_immediate())
 	{
-		auto data = dexp_l->trim_myself();
-		return data ? data : dexp_l;
+		if (dexp_l->merge_immediate_value(dexp_r, op))
+		{
+			auto data = dexp_l->trim_myself();
+			return data ? data : dexp_l;
+		}
 	}
-	else if (('+' == op[0] || '*' == op[0]) && dexp_r->merge_immediate_value(dexp_l, op[0]))
+	else if (dexp_r->is_negative())
 	{
-		auto data = dexp_r->trim_myself();
-		return data ? data : dexp_r;
+		if (is_operator_1(op))
+			return merge_data_exp(dexp_l, dexp_r->to_negative(), '+' == op ? '-' : '+');
+		else if (dexp_l->is_negative())
+			return merge_data_exp(dexp_l->to_negative(), dexp_r->to_negative(), op);
+		else
+			return merge_data_exp(dexp_r, dexp_l, op);
 	}
-	//todo, handle / operators
+	else if (dexp_r->is_composite())
+	{
+		auto op_2 = dexp_r->get_operator();
+		if (is_same_operator_level(op, op_2))
+		{
+			std::shared_ptr<data_exp<T>> data;
+			if (dexp_l->merge_immediate_value(dexp_r->get_1st_data(), op))
+			{
+				data = dexp_l->trim_myself();
+				if (!data)
+					data = dexp_l;
+			}
+			else
+				data = merge_data_exp(dexp_l, dexp_r->get_1st_data(), op);
 
-	switch (op[0])
+			if ('-' == op)
+				op_2 = '-' == op_2 ? '+' : '-';
+			else if ('/' == op)
+				op_2 = '/' == op_2 ? '*' : '/';
+			return merge_data_exp(data, dexp_r->get_2nd_data(), op_2);
+		}
+	}
+
+	std::shared_ptr<data_exp<T>> data;
+	switch (op)
 	{
 	case '+':
+		data = std::make_shared<add_data_exp<T>>(dexp_l, dexp_r, op);
+		break;
 	case '-':
-		if (dexp_l->is_immediate() && 0 == dexp_l->get_immediate_value())
-			return dexp_r;
-		else if (dexp_r->is_immediate() && 0 == dexp_r->get_immediate_value())
-			return dexp_l;
-		if ('+' == op[0])
-			return std::make_shared<add_data_exp<T>>(dexp_l, dexp_r, op[0]);
-		else
-			return std::make_shared<sub_data_exp<T>>(dexp_l, dexp_r, op[0]);
+		data = std::make_shared<sub_data_exp<T>>(dexp_l, dexp_r, op);
 		break;
 	case '*':
-		if (dexp_l->is_immediate())
-		{
-			if (1 == dexp_l->get_immediate_value())
-				return dexp_r;
-			else if (0 == dexp_l->get_immediate_value())
-				return dexp_l;
-		}
-		if (dexp_r->is_immediate())
-		{
-			if (1 == dexp_r->get_immediate_value())
-				return dexp_l;
-			else if (0 == dexp_r->get_immediate_value())
-				return dexp_r;
-		}
-		return std::make_shared<multi_data_exp<T>>(dexp_l, dexp_r, op[0]);
+		data = std::make_shared<multi_data_exp<T>>(dexp_l, dexp_r, op);
 		break;
 	case '/':
-		if (dexp_l->is_immediate() && 0 == dexp_l->get_immediate_value() ||
-			dexp_r->is_immediate() && 1 == dexp_r->get_immediate_value())
-			return dexp_l;
-		return std::make_shared<div_data_exp<T>>(dexp_l, dexp_r, op[0]);
+		data = std::make_shared<div_data_exp<T>>(dexp_l, dexp_r, op);
 		break;
 	default:
-		throw(("undefined operator " + op).data());
+		throw(("undefined operator " + std::string(1, op)).data());
 		break;
 	}
+
+	auto trimed_data = data->trim_myself();
+	return trimed_data ? trimed_data : data;
 }
+template <typename T = float> inline std::shared_ptr<data_exp<T>> merge_data_exp(
+	const std::shared_ptr<data_exp<T>>& dexp_l, const std::shared_ptr<data_exp<T>>& dexp_r, const std::string& op)
+{return merge_data_exp(dexp_l, dexp_r, op[0]);}
+
 /////////////////////////////////////////////////////////////////////////////////////////
 
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -961,6 +1029,10 @@ private:
 			{
 				if (is_q || is_c)
 					throw("only arithmetic operator can appears after ? or : operator!");
+				else if (negative)
+					throw("unexpected - operator!");
+				else if (positive)
+					throw("unexpected + operator!");
 
 				++revert;
 				++index;
@@ -968,12 +1040,12 @@ private:
 			}
 			else if (is_operator(item))
 			{
+				auto check = false;
 				if (data_2)
 				{
 					if (!op_2.empty())
-						throw("redundant operator!");
-
-					if (is_operator_1(item))
+						check = true;
+					else if (is_operator_1(item))
 					{
 						data_1 = merge_data_exp(data_1, data_2, op_1);
 						op_1 = item;
@@ -985,34 +1057,42 @@ private:
 				else if (data_1)
 				{
 					if (!op_1.empty())
-						throw("redundant operator!");
-
-					op_1 = item;
-				}
-				else if ("-" == item)
-				{
-					if (negative)
-						throw("redundant - operator!");
+						check = true;
 					else
-					{
-						negative = true;
-						++index;
-						continue;
-					}
+						op_1 = item;
 				}
-				else if ("+" == item)
-				{
-					if (positive)
-						throw("redundant + operator!");
-					else
-					{
-						positive = true;
-						++index;
-						continue;
-					}
-				}
-				else
+				else if (is_operator_2(item))
 					throw("missing operand!");
+				else
+					check = true;
+
+				if (check)
+				{
+					if ("-" == item)
+					{
+						if (negative)
+							throw("redundant - operator!");
+						else
+						{
+							negative = true;
+							++index;
+							continue;
+						}
+					}
+					else if ("+" == item)
+					{
+						if (positive)
+							throw("redundant + operator!");
+						else
+						{
+							positive = true;
+							++index;
+							continue;
+						}
+					}
+					else
+						throw("redundant operand!");
+				}
 			}
 			else if (is_comparer(item))
 			{
@@ -1107,6 +1187,16 @@ private:
 				else
 					parsed_exp = parse_data(item);
 
+				if (parsed_exp->is_data())
+				{
+					positive = false;
+					if (negative)
+					{
+						negative = false;
+						parsed_exp = std::dynamic_pointer_cast<data_exp<T>>(parsed_exp)->to_negative();
+					}
+				}
+
 				if (revert > 0)
 				{
 					if (parsed_exp->is_data())
@@ -1117,7 +1207,7 @@ private:
 						else
 							parsed_exp = std::make_shared<not_equal_0_judge_exp<T>>(data);
 					}
-					else if (revert)
+					else if (1 == (revert & 1))
 						parsed_exp = std::make_shared<not_judge_exp<T>>(std::dynamic_pointer_cast<judge_exp<T>>(parsed_exp));
 
 					revert = 0;
@@ -1126,13 +1216,6 @@ private:
 				if (parsed_exp->is_data())
 				{
 					auto data = std::dynamic_pointer_cast<data_exp<T>>(parsed_exp);
-					if (negative)
-					{
-						negative = false;
-						data = make_negative_data_exp(data);
-					}
-					positive = false;
-
 					if (data_2)
 					{
 						if (op_2.empty())

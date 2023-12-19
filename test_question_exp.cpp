@@ -23,9 +23,9 @@ int main(int argc, const char* argv[])
 {
 	const char* const inputs[] = {
 		//test merging of immediate values at compilation time
-		"a != 0 ? a + 1 + 2 + 3 : 0", //immediate values: 6, 0
-		"+(a + 1) == 0 ? a + 1 / 2 + 3 : 0", //immediate values: 3.5, 0
-		"-a > 0 ? a / 1 / 2 + 3 : 0", //immediate values: 2, 3, 0
+		"a ? a + 1 + 2 + 3 : 0", //immediate values: 6, 0
+		"a ? a + 1 / 2 + 3 : 0", //immediate values: 3.5, 0
+		"a ? a / 1 / 2 + 3 : 0", //immediate values: 2, 3, 0
 		"a ? a / 1 + 2 + 3 : 0", //immediate values: 5, 0
 		"a ? (a + 1) + 2 + 3 : 0", //immediate values: 6, 0
 		"a ? (a + 1) + (2 + 3) : 0", //immediate values: 6, 0
@@ -35,21 +35,23 @@ int main(int argc, const char* argv[])
 		"a ? a - 1 + b - 1 : 0", //immediate values: 2, 0
 		"a ? (a + 1) + b + 1 : 0", //immediate values: 2, 0
 		"a ? a + 1 + (b + 1) : 0", //immediate values: 2, 0
+		"a ? a + 1 + -(b + 1) : 0", //immediate values: 2, 0
 		"a ? (a + 1) + (b + 1) : 0", //immediate values: 2, 0
+		"a ? (a + 1) + -(b + 1) : 0", //immediate values: 2, 0
 		"a ? 2 + (b + 2) : 0", //immediate values: 4, 0
 		"a ? 3 * (b * 3) : 0", //immediate values: 9, 0
 		"a ? 3 * (b / 3) : 0", //immediate values: 0
 		"a ? (b - 2) + 3 : 0", //immediate values: -1, 0
-		"a ? 3 + (b - 2) : 0", //immediate values: -1, 0
+		"a ? 3 + (b - 2) : 0", //immediate values: 1, 0
 		"a ? 3 + (b - 3) : 0", //immediate values: 0
-
-		//following expressions cannot eliminate/merge immediate successfully, they have the same format --
-		// operator - or / followed by parentheses, of with negative operators
-		"a ? 2 - (b + 2) : 0", //immediate values: 2, 2, 0 (it's hard to fix this defect -- to be 0, 0, or just 0)
-		"a ? 2 - (b - 2) : 0", //immediate values: 2, 2, 0 (it's hard to fix this defect --to be 4, 0 )
-		"a ? 3 / (b * 3) : 0", //immediate values: 3, 3, 0 (it's hard to fix this defect -- to be just 0)
-		"a ? 3 / (b / 3) : 0", //immediate values: 3, 3, 0 (it's hard to fix this defect -- to be 9, 0)
-		"a ? -(b + 2) + 2 : 0", //immediate values: 2, 2, 0 (it's hard to fix this defect -- to be 0, 0, or just 0)
+		"a ? 2 + -(b + 2) : 0", //immediate values: 0
+		"a ? 2 - (b + 2) + 10 : 0", //immediate values: 10, 0
+		"a ? 2 - (b - 2) : 0", //immediate values: 4, 0
+		"a ? 3 / (b * 3) : 0", //immediate values: 1, 0
+		"a ? 3 / (b / 3) : 0", //immediate values: 9, 0
+		"a ? -(b + 2) + 2 : 0", //immediate values: 0
+		"a ? b * 2 * -2 : 0", //immediate values: -4, 0
+		"a ? b * 2 / -2 : 0", //immediate values: -1, 0
 ///*
 		//normal test
 		"(a + b > 0 && b > 0 || c > 0) ? ((a > 0 && b > 0) ? +a + b + 1 : - c + 1 + 2) : ((a < 0 || b < 0) ? a - b : c)",
@@ -70,6 +72,12 @@ int main(int argc, const char* argv[])
 		"(a <= 0 && b <= 0 && c <= 0 && d <= 0 && e <= 0 && f <= 0) ? 0 : (a > 0) ? a : (b > 0) ? b : (c > 0) ? c : (d > 0) ? d : (e > 0) ? e : (f > 0) ? f : -1",
 		"a > 0 ? b > 0 ? b : 100 : c + 1",
 		"!(a > 0) ? a : b ? c : 0",
+		"!-a ? 1 : 2",
+		"!+a ? 1 : 2",
+		"a ? -(b + 2) + 3 : 0",
+		"a ? -b + 0 : 0",
+		"a ? -(-(-(b))) : 0",
+		"a ? -(-(-(-b))) : 0",
 
 		//following expressions are supposed to be invalid:
 		"!a",
@@ -88,12 +96,14 @@ int main(int argc, const char* argv[])
 		"a! > 0 ? a : b",
 		"!(a > 0) ? a : b : c",
 		"!(a > 0) ? a : b : c : 0",
+		"-!a ? 1 : 2",
+		"+!a ? 1 : 2",
 //*/
 	};
 	for (size_t i = 0; i < sizeof(inputs) / sizeof(const char*); ++i)
 	{
+		printf("compile the question mark expression: %s\n", inputs[i]);
 #ifdef __linux__
-		puts("compile the question mark expression:");
 		struct timeval begin;
 		gettimeofday(&begin, nullptr);
 		auto exp = qme::question_exp_parser<>::parse(inputs[i]);
