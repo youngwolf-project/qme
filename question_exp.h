@@ -305,7 +305,7 @@ public:
 	negative_data_exp(const std::string& _variable_name) : variable_data_exp<T>(_variable_name) {}
 
 	virtual bool is_negative() const {return true;}
-	virtual std::shared_ptr<data_exp<T>> to_negative() const {return std::make_shared<variable_data_exp<T>>(this->get_variable_name());}
+	virtual std::shared_ptr<data_exp<T>> to_negative() const {return std::make_shared<variable_data_exp<T>>(this->variable_name);}
 
 	virtual T operator()(const std::map<std::string, T>& data_map) const {return -variable_data_exp<T>::operator()(data_map);}
 };
@@ -314,25 +314,21 @@ template <typename T> class variable_data_exp : public data_exp<T>
 {
 public:
 	variable_data_exp(const std::string& _variable_name) : variable_name(_variable_name) {}
-	const std::string& get_variable_name() const {return variable_name;}
 
 	virtual std::shared_ptr<data_exp<T>> to_negative() const {return std::make_shared<negative_data_exp<T>>(variable_name);}
 
 	virtual T operator()(const std::map<std::string, T>& data_map) const
 	{
 		auto iter = data_map.find(variable_name);
-		if (iter != data_map.end())
-		{
+		if (iter == data_map.end())
+			throw(("undefined symbol " + variable_name).data());
 #ifdef DEBUG
-			std::cout << " get " << variable_name << " returns " << iter->second << std::endl;
+		std::cout << " get " << variable_name << " returns " << iter->second << std::endl;
 #endif
-			return iter->second;
-		}
-
-		throw(("undefined symbol " + variable_name).data());
+		return iter->second;
 	}
 
-private:
+protected:
 	std::string variable_name;
 };
 
@@ -404,7 +400,7 @@ template <typename T = float> inline std::shared_ptr<data_exp<T>> merge_data_exp
 }
 template <typename T = float> inline std::shared_ptr<data_exp<T>> merge_data_exp(
 	const std::shared_ptr<data_exp<T>>& dexp_l, const std::shared_ptr<data_exp<T>>& dexp_r, const std::string& op)
-{return merge_data_exp(dexp_l, dexp_r, op[0]);}
+	{return merge_data_exp(dexp_l, dexp_r, op[0]);}
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
@@ -413,8 +409,6 @@ template <typename T = float> class judge_exp : public exp
 {
 public:
 	virtual bool is_judge() const {return true;}
-	virtual std::shared_ptr<data_exp<T>> get_data_exp() const {return std::shared_ptr<data_exp<T>>();}
-
 	virtual bool operator()(const std::map<std::string, T>&) const = 0;
 };
 
@@ -434,7 +428,6 @@ template <typename T = float> class equal_0_judge_exp : public judge_exp<T>
 public:
 	equal_0_judge_exp(const std::shared_ptr<data_exp<T>>& _dexp) : dexp(_dexp) {}
 
-	virtual std::shared_ptr<data_exp<T>> get_data_exp() const {return dexp;}
 	virtual bool operator()(const std::map<std::string, T>& data_map) const {return 0 == (*dexp)(data_map);}
 
 private:
@@ -446,7 +439,6 @@ template <typename T = float> class not_equal_0_judge_exp : public judge_exp<T>
 public:
 	not_equal_0_judge_exp(const std::shared_ptr<data_exp<T>>& _dexp) : dexp(_dexp) {}
 
-	virtual std::shared_ptr<data_exp<T>> get_data_exp() const {return dexp;}
 	virtual bool operator()(const std::map<std::string, T>& data_map) const {return 0 != (*dexp)(data_map);}
 
 private:
@@ -517,6 +509,25 @@ public:
 	virtual bool operator()(const std::map<std::string, T>& data_map) const {return (*this->dexp_l)(data_map) != (*this->dexp_r)(data_map);}
 };
 
+template <typename T = float> inline std::shared_ptr<judge_exp<T>> make_binary_judge_exp(
+	const std::shared_ptr<data_exp<T>>& dc_1, const std::shared_ptr<data_exp<T>>& dc_2, const std::string& c)
+{
+	if (">" == c)
+		return std::make_shared<bigger_judge_exp<T>>(dc_1, dc_2);
+	else if (">=" == c)
+		return std::make_shared<bigger_equal_judge_exp<T>>(dc_1, dc_2);
+	else if ("<" == c)
+		return std::make_shared<smaller_judge_exp<T>>(dc_1, dc_2);
+	else if ("<=" == c)
+		return std::make_shared<smaller_equal_judge_exp<T>>(dc_1, dc_2);
+	else if ("==" == c)
+		return std::make_shared<equal_judge_exp<T>>(dc_1, dc_2);
+	else if ("!=" == c)
+		return std::make_shared<not_equal_judge_exp<T>>(dc_1, dc_2);
+	else
+		throw("unknown compare operator " + c);
+}
+
 template <typename T = float> class and_judge_exp : public judge_exp<T>
 {
 public:
@@ -569,8 +580,7 @@ private:
 };
 /////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename T = float>
-class question_exp_parser
+template <typename T = float> class question_exp_parser
 {
 private:
 	struct sub_exp
@@ -588,8 +598,9 @@ public:
 		{
 			auto expression = statement;
 			pre_parse_1(expression);
-
+#ifdef DEBUG
 			auto old_exp = expression;
+#endif
 			std::map<std::string, sub_exp> sub_exps;
 
 			size_t index = 0;
@@ -642,19 +653,17 @@ public:
 				for (auto& item : sub_exps)
 					item.second.items = split(item.second.raw_exp);
 #endif
-				while(true)
+				auto parsed_num = 0;
+				do
 				{
-					auto parsed_num = 0;
+					parsed_num = 0;
 					for (auto& item : sub_exps)
 					{
 						if (!item.second.parsed_exp)
 							if ((item.second.parsed_exp = parse(item.second.items, sub_exps)))
 								++parsed_num;
 					}
-
-					if (0 == parsed_num)
-						break;
-				}
+				} while (parsed_num > 0);
 			}
 
 			auto items = split(expression);
@@ -683,15 +692,13 @@ private:
 #ifdef DEBUG
 		printf(" pre-parsing phase 1 from [%s] ", expression.data());
 #endif
-
 		char blanks[] = {' ', '\t', '\n', '\r'};
 		for (auto& c : blanks)
 		{
 			auto pos = std::string::npos;
 			while (true)
 			{
-				pos = expression.rfind(c, pos);
-				if (std::string::npos == pos)
+				if (std::string::npos == (pos = expression.rfind(c, pos)))
 					break;
 
 				expression.erase(pos, 1);
@@ -735,7 +742,7 @@ private:
 
 				char buf[32];
 				std::string name(buf, snprintf(buf, sizeof(buf), "$%d_%d", level, p_num));
-				std::string raw_exp = std::string(expression.data() + p_start + 1, index - p_start - 1);
+				std::string raw_exp = std::string(std::next(expression.data(), p_start + 1), index - p_start - 1);
 				sub_exps[name] = sub_exp {name, raw_exp};
 
 				auto old_size = expression.size();
@@ -924,29 +931,10 @@ private:
 		{
 			std::shared_ptr<data_exp<T>> dc_2;
 			finish_data_exp(data_1, data_2, op_1, op_2, dc_2);
-			merge_judge_exp(judge_1, judge_2, lop_1, lop_2, make_judge_exp(dc, dc_2, c));
+			merge_judge_exp(judge_1, judge_2, lop_1, lop_2, make_binary_judge_exp(dc, dc_2, c));
 			dc.reset();
 			c.clear();
 		}
-	}
-
-	static std::shared_ptr<judge_exp<T>> make_judge_exp(const std::shared_ptr<data_exp<T>>& dc_1,
-		const std::shared_ptr<data_exp<T>>& dc_2, const std::string& c)
-	{
-		if (">" == c)
-			return std::make_shared<bigger_judge_exp<T>>(dc_1, dc_2);
-		else if (">=" == c)
-			return std::make_shared<bigger_equal_judge_exp<T>>(dc_1, dc_2);
-		else if ("<" == c)
-			return std::make_shared<smaller_judge_exp<T>>(dc_1, dc_2);
-		else if ("<=" == c)
-			return std::make_shared<smaller_equal_judge_exp<T>>(dc_1, dc_2);
-		else if ("==" == c)
-			return std::make_shared<equal_judge_exp<T>>(dc_1, dc_2);
-		else if ("!=" == c)
-			return std::make_shared<not_equal_judge_exp<T>>(dc_1, dc_2);
-		else
-			throw("unknown compare operator " + c);
 	}
 
 	static void finish_judge_exp(std::shared_ptr<judge_exp<T>>& judge_1, std::shared_ptr<judge_exp<T>>& judge_2,
@@ -1162,22 +1150,17 @@ private:
 					auto iter = sub_exps.find(item);
 					if (iter == std::end(sub_exps))
 						throw("undefined symbol " + item);
-					else if (!iter->second.parsed_exp) //dependancy not ready
+					else if (!(parsed_exp = iter->second.parsed_exp)) //dependancy not ready
 						return std::shared_ptr<exp>();
-					else
-						parsed_exp = iter->second.parsed_exp;
 				}
 				else
 					parsed_exp = parse_data(item);
 
 				if (parsed_exp->is_data())
 				{
-					positive = false;
 					if (negative)
-					{
-						negative = false;
 						parsed_exp = std::dynamic_pointer_cast<data_exp<T>>(parsed_exp)->to_negative();
-					}
+					negative = positive = false;
 				}
 
 				if (revert > 0)
