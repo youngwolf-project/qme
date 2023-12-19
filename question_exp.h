@@ -305,23 +305,6 @@ public:
 	negative_data_exp(const std::string& _variable_name) : variable_data_exp<T>(_variable_name) {}
 
 	virtual bool is_negative() const {return true;}
-	virtual bool merge_immediate_value(const std::shared_ptr<data_exp<T>>& other_exp, char other_op)
-	{
-		if (is_operator_2(other_op))
-		{
-			if (variable_data_exp<T>::merge_immediate_value(other_exp, other_op))
-				return true;
-		}
-		else if ('+' == other_op)
-		{
-			if (variable_data_exp<T>::merge_immediate_value(other_exp, '-'))
-				return true;
-		}
-		else if (variable_data_exp<T>::merge_immediate_value(other_exp, '+'))
-			return true;
-
-		return false;
-	}
 	virtual std::shared_ptr<data_exp<T>> to_negative() const {return std::make_shared<variable_data_exp<T>>(this->get_variable_name());}
 
 	virtual T operator()(const std::map<std::string, T>& data_map) const {return -variable_data_exp<T>::operator()(data_map);}

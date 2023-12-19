@@ -35,9 +35,10 @@ int main(int argc, const char* argv[])
 		"a ? a - 1 + b - 1 : 0", //immediate values: 2, 0
 		"a ? (a + 1) + b + 1 : 0", //immediate values: 2, 0
 		"a ? a + 1 + (b + 1) : 0", //immediate values: 2, 0
-		"a ? a + 1 + -(b + 1) : 0", //immediate values: 2, 0
+		"a ? a + 1 + -(b + 1) : 0", //immediate values: 0
+		"a ? a + 1 - (b + 1) : 0", //immediate values: 0
 		"a ? (a + 1) + (b + 1) : 0", //immediate values: 2, 0
-		"a ? (a + 1) + -(b + 1) : 0", //immediate values: 2, 0
+		"a ? (a + 1) + -(b + 1) : 0", //immediate values: 0
 		"a ? 2 + (b + 2) : 0", //immediate values: 4, 0
 		"a ? 3 * (b * 3) : 0", //immediate values: 9, 0
 		"a ? 3 * (b / 3) : 0", //immediate values: 0
