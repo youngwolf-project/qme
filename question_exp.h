@@ -65,8 +65,10 @@ template <typename T = float> class data_exp : public exp
 public:
 	virtual bool is_data() const {return true;}
 	virtual bool is_immediate() const {return false;}
+	virtual bool has_2_level_immediate() const {return false;} //immediate value in * or / expression
 	virtual bool is_negative() const {return false;}
 	virtual bool is_composite() const {return false;}
+	virtual int get_depth() const {return 1;}
 	virtual char get_operator() const {throw("unsupported get operator operation!");}
 	virtual T get_immediate_value() const {throw("unsupported get immediate value operation!");}
 	virtual std::shared_ptr<data_exp<T>> get_1st_data() const {throw("unsupported get 1st data operation!");}
@@ -91,7 +93,11 @@ public:
 	binary_data_exp(const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r, char _op) :
 		op(_op), dexp_l(_dexp_l), dexp_r(_dexp_r) {}
 
+	virtual bool has_2_level_immediate() const
+		{return is_operator_2(op) && (dexp_l->has_2_level_immediate() || dexp_r->has_2_level_immediate());}
+
 	virtual bool is_composite() const {return true;}
+	virtual int get_depth() const {return 1 + std::max(dexp_l->get_depth(), dexp_r->get_depth());}
 	virtual char get_operator() const {return op;}
 	virtual std::shared_ptr<data_exp<T>> get_1st_data() const {return dexp_l;}
 	virtual std::shared_ptr<data_exp<T>> get_2nd_data() const {return dexp_r;}
@@ -200,16 +206,39 @@ public:
 		switch (op)
 		{
 		case '+':
-			return merge_data_exp(dexp_l->to_negative(), dexp_r, '-');
+			if (dexp_l->has_2_level_immediate())
+				return merge_data_exp(dexp_l->to_negative(), dexp_r, '-');
+			else if (dexp_r->has_2_level_immediate())
+				return merge_data_exp(dexp_r->to_negative(), dexp_l, '-');
+			else
+			{
+				auto depth_l = dexp_l->get_depth(), depth_r = dexp_r->get_depth();
+				if (depth_l <= depth_r)
+					return merge_data_exp(dexp_l->to_negative(), dexp_r, '-');
+				else
+					return merge_data_exp(dexp_r->to_negative(), dexp_l, '-');
+			}
 			break;
 		case '-':
 			return merge_data_exp(dexp_r, dexp_l, '-');
 			break;
 		case '*':
 		case '/':
-			return merge_data_exp(dexp_l->to_negative(), dexp_r, op);;
+			if (dexp_l->has_2_level_immediate())
+				return merge_data_exp(dexp_l->to_negative(), dexp_r, op);
+			else if (dexp_r->has_2_level_immediate())
+				return merge_data_exp(dexp_l, dexp_r->to_negative(), op);
+			else
+			{
+				auto depth_l = dexp_l->get_depth(), depth_r = dexp_r->get_depth();
+				if (depth_l <= depth_r)
+					return merge_data_exp(dexp_l->to_negative(), dexp_r, op);
+				else
+					return merge_data_exp(dexp_l, dexp_r->to_negative(), op);
+			}
+			break;
 		default:
-			throw(("undefined operator " + std::string(1, op)).data());
+			throw("undefined operator " + std::string(1, op));
 			break;
 		}
 	}
@@ -262,6 +291,7 @@ public:
 	immediate_data_exp(T v) : value(v) {}
 
 	virtual bool is_immediate() const {return true;}
+	virtual bool has_2_level_immediate() const {return true;}
 	virtual T get_immediate_value() const {return value;}
 
 	virtual void show_immediate_value() const {std::cout << "  " << value << std::endl;}
@@ -285,7 +315,7 @@ public:
 			value /= other_exp->get_immediate_value();
 			break;
 		default:
-			throw(("undefined operator " + std::string(1, other_op)).data());
+			throw("undefined operator " + std::string(1, other_op));
 			break;
 		}
 		return true;
@@ -321,7 +351,7 @@ public:
 	{
 		auto iter = data_map.find(variable_name);
 		if (iter == data_map.end())
-			throw(("undefined symbol " + variable_name).data());
+			throw("undefined symbol " + variable_name);
 #ifdef DEBUG
 		std::cout << " get " << variable_name << " returns " << iter->second << std::endl;
 #endif
@@ -391,7 +421,7 @@ template <typename T = float> inline std::shared_ptr<data_exp<T>> merge_data_exp
 		data = std::make_shared<div_data_exp<T>>(dexp_l, dexp_r, op);
 		break;
 	default:
-		throw(("undefined operator " + std::string(1, op)).data());
+		throw("undefined operator " + std::string(1, op));
 		break;
 	}
 
@@ -562,21 +592,33 @@ inline std::shared_ptr<judge_exp<T>> merge_judge_exp(const std::shared_ptr<judge
 	else if ("||" == lop)
 		return std::make_shared<or_judge_exp<T>>(jexp_l, jexp_r);
 	else
-		throw(("undefined logical operator " + lop).data());
+		throw("undefined logical operator " + lop);
 }
 /////////////////////////////////////////////////////////////////////////////////////////
 
 /////////////////////////////////////////////////////////////////////////////////////////
-template <typename T = float> class question_exp : public binary_data_exp<T>
+template <typename T = float> class question_exp : public data_exp<T>
 {
 public:
-	question_exp(const std::shared_ptr<judge_exp<T>>& _jexp, const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r) :
-		binary_data_exp<T>(_dexp_l, _dexp_r, '\0'), jexp(_jexp) {}
+	question_exp(const std::shared_ptr<judge_exp<T>>& _jexp,
+		const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r, bool _negative = false) :
+		jexp(_jexp), dexp_l(_dexp_l), dexp_r(_dexp_r), negative(_negative) {}
 
-	virtual T operator()(const std::map<std::string, T>& data_map) const {return (*jexp)(data_map) ? (*this->dexp_l)(data_map) : (*this->dexp_r)(data_map);}
+	virtual bool is_negative() const {return negative;}
+	virtual int get_depth() const {return std::max(dexp_l->get_depth(), dexp_r->get_depth());}
+	virtual std::shared_ptr<data_exp<T>> to_negative() const {return std::make_shared<question_exp<T>>(jexp, dexp_l, dexp_r, !negative);}
+	virtual void show_immediate_value() const {dexp_l->show_immediate_value(); dexp_r->show_immediate_value();}
+
+	virtual T operator()(const std::map<std::string, T>& data_map) const
+	{
+		auto re = (*jexp)(data_map) ? (*dexp_l)(data_map) : (*dexp_r)(data_map);
+		return negative ? -re : re;
+	}
 
 private:
+	bool negative;
 	std::shared_ptr<judge_exp<T>> jexp;
+	std::shared_ptr<data_exp<T>> dexp_l, dexp_r;
 };
 /////////////////////////////////////////////////////////////////////////////////////////
 
@@ -673,6 +715,7 @@ public:
 
 			auto re = std::dynamic_pointer_cast<data_exp<T>>(exp);
 #ifdef DEBUG
+			printf(" max depth: %d\n", re->get_depth());
 			puts(" immediate values:");
 			re->show_immediate_value();
 #endif

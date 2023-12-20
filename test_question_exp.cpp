@@ -53,8 +53,20 @@ int main(int argc, const char* argv[])
 		"a ? -(b + 2) + 2 : 0", //immediate values: 0
 		"a ? b * 2 * -2 : 0", //immediate values: -4, 0
 		"a ? b * 2 / -2 : 0", //immediate values: -1, 0
+		"a ? -(a * 10 + b) : 0", //immediate values: -10, 0
+		"a ? -(a / 10 - b) : 0", //immediate values: 10, 0
+
+		//sub question expressions' immediate values will not be merged into superiors'
+		"a ? 20 + (a > 0 ? a : 10) : 0", //immediate values: 20, 10, 0
+		"a ? (a > 0 ? a : 10) + 20 : 0", //immediate values: 10, 20, 0
+		"a ? 20 - (a > 0 ? a : 10) : 0", //immediate values: 20, 10, 0
+		"a ? (a > 0 ? a : 10) - 20 : 0", //immediate values: 10, 20, 0
+		"a ? -20 + -(a > 0 ? a : 10) : 0", //immediate values: -20, 10, 0
+		"a ? -(a > 0 ? a : 10) - 20 : 0", //immediate values: 10, 20, 0
+		"a ? -(a > 0 ? a : 10) + 20 : 0", //immediate values: 20, 10, 0
 ///*
 		//normal test
+		"a > 0 ? (b < 0 ? b : -b) + 1 >= 0 ? c : -c : c > 0 ? -c : c",
 		"(a + b > 0 && b > 0 || c > 0) ? ((a > 0 && b > 0) ? +a + b + 1 : - c + 1 + 2) : ((a < 0 || b < 0) ? a - b : c)",
 		"a > 0 ? b > 0 ? b : 10 : c > 0 ? c : 100",
 		"a > 0 ? b > 0 ? c > 0 ? c : 1 : 2 : 3",
