@@ -713,10 +713,10 @@ public:
 #endif
 			return re;
 		}
-		catch (const std::exception& e) {puts(e.what());}
-		catch (const std::string& e) {puts(e.data());}
-		catch (const char* e) {puts(e);}
-		catch (...) {puts("unknown exception happened!");}
+		catch (const std::exception& e) {printf("\033[31m%s\033[0m\n", e.what());}
+		catch (const std::string& e) {printf("\033[31m%s\033[0m\n", e.data());}
+		catch (const char* e) {printf("\033[31m%s\033[0m\n", e);}
+		catch (...) {puts("\033[31munknown exception happened!\033[0m");}
 
 		return std::shared_ptr<data_exp<T>>();
 	}
