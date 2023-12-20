@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <functional>
 #include <iostream>
 #include <string>
 #include <memory>
@@ -79,7 +80,7 @@ public:
 	virtual std::shared_ptr<data_exp<T>> trim_myself() {return std::shared_ptr<data_exp<T>>();}
 	virtual std::shared_ptr<data_exp<T>> to_negative() const = 0;
 
-	virtual T operator()(const std::map<std::string, T>&) const = 0;
+	virtual T operator()(const std::function<T(const std::string&)>&) const = 0;
 };
 /////////////////////////////////////////////////////////////////////////////////////////
 
@@ -254,7 +255,7 @@ public:
 	add_data_exp(const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r, char _op) :
 		binary_data_exp<T>(_dexp_l, _dexp_r, _op) {}
 
-	virtual T operator()(const std::map<std::string, T>& data_map) const {return (*this->dexp_l)(data_map) + (*this->dexp_r)(data_map);}
+	virtual T operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) + (*this->dexp_r)(cb);}
 };
 
 template <typename T = float> class sub_data_exp : public binary_data_exp<T>
@@ -263,7 +264,7 @@ public:
 	sub_data_exp(const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r, char _op) :
 		binary_data_exp<T>(_dexp_l, _dexp_r, _op) {}
 
-	virtual T operator()(const std::map<std::string, T>& data_map) const {return (*this->dexp_l)(data_map) - (*this->dexp_r)(data_map);}
+	virtual T operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) - (*this->dexp_r)(cb);}
 };
 
 template <typename T = float> class multi_data_exp : public binary_data_exp<T>
@@ -272,7 +273,7 @@ public:
 	multi_data_exp(const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r, char _op) :
 		binary_data_exp<T>(_dexp_l, _dexp_r, _op) {}
 
-	virtual T operator()(const std::map<std::string, T>& data_map) const {return (*this->dexp_l)(data_map) * (*this->dexp_r)(data_map);}
+	virtual T operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) * (*this->dexp_r)(cb);}
 };
 
 template <typename T = float> class div_data_exp : public binary_data_exp<T>
@@ -281,7 +282,7 @@ public:
 	div_data_exp(const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r, char _op) :
 		binary_data_exp<T>(_dexp_l, _dexp_r, _op) {}
 
-	virtual T operator()(const std::map<std::string, T>& data_map) const {return (*this->dexp_l)(data_map) / (*this->dexp_r)(data_map);}
+	virtual T operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) / (*this->dexp_r)(cb);}
 };
 
 template <typename T = float> class immediate_data_exp : public data_exp<T>
@@ -322,7 +323,7 @@ public:
 	}
 	virtual std::shared_ptr<data_exp<T>> to_negative() const {return std::make_shared<immediate_data_exp<T>>(-value);}
 
-	virtual T operator()(const std::map<std::string, T>&) const {return value;}
+	virtual T operator()(const std::function<T(const std::string&)>&) const {return value;}
 
 private:
 	T value;
@@ -337,7 +338,7 @@ public:
 	virtual bool is_negative() const {return true;}
 	virtual std::shared_ptr<data_exp<T>> to_negative() const {return std::make_shared<variable_data_exp<T>>(this->variable_name);}
 
-	virtual T operator()(const std::map<std::string, T>& data_map) const {return -variable_data_exp<T>::operator()(data_map);}
+	virtual T operator()(const std::function<T(const std::string&)>& cb) const {return -variable_data_exp<T>::operator()(cb);}
 };
 
 template <typename T> class variable_data_exp : public data_exp<T>
@@ -347,16 +348,7 @@ public:
 
 	virtual std::shared_ptr<data_exp<T>> to_negative() const {return std::make_shared<negative_data_exp<T>>(variable_name);}
 
-	virtual T operator()(const std::map<std::string, T>& data_map) const
-	{
-		auto iter = data_map.find(variable_name);
-		if (iter == data_map.end())
-			throw("undefined symbol " + variable_name);
-#ifdef DEBUG
-		std::cout << " get " << variable_name << " returns " << iter->second << std::endl;
-#endif
-		return iter->second;
-	}
+	virtual T operator()(const std::function<T(const std::string&)>& cb) const {return cb(variable_name);}
 
 protected:
 	std::string variable_name;
@@ -439,7 +431,7 @@ template <typename T = float> class judge_exp : public exp
 {
 public:
 	virtual bool is_judge() const {return true;}
-	virtual bool operator()(const std::map<std::string, T>&) const = 0;
+	virtual bool operator()(const std::function<T(const std::string&)>&) const = 0;
 };
 
 template <typename T = float> class not_judge_exp : public judge_exp<T>
@@ -447,7 +439,7 @@ template <typename T = float> class not_judge_exp : public judge_exp<T>
 public:
 	not_judge_exp(const std::shared_ptr<judge_exp<T>>& _jexp) : jexp(_jexp) {}
 
-	virtual bool operator()(const std::map<std::string, T>& data_map) const {return !(*jexp)(data_map);}
+	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return !(*jexp)(cb);}
 
 private:
 	std::shared_ptr<judge_exp<T>> jexp;
@@ -458,7 +450,7 @@ template <typename T = float> class equal_0_judge_exp : public judge_exp<T>
 public:
 	equal_0_judge_exp(const std::shared_ptr<data_exp<T>>& _dexp) : dexp(_dexp) {}
 
-	virtual bool operator()(const std::map<std::string, T>& data_map) const {return 0 == (*dexp)(data_map);}
+	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return 0 == (*dexp)(cb);}
 
 private:
 	std::shared_ptr<data_exp<T>> dexp;
@@ -469,7 +461,7 @@ template <typename T = float> class not_equal_0_judge_exp : public judge_exp<T>
 public:
 	not_equal_0_judge_exp(const std::shared_ptr<data_exp<T>>& _dexp) : dexp(_dexp) {}
 
-	virtual bool operator()(const std::map<std::string, T>& data_map) const {return 0 != (*dexp)(data_map);}
+	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return 0 != (*dexp)(cb);}
 
 private:
 	std::shared_ptr<data_exp<T>> dexp;
@@ -491,7 +483,7 @@ public:
 	bigger_judge_exp(const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r) :
 		binary_judge_exp<T>(_dexp_l, _dexp_r) {}
 
-	virtual bool operator()(const std::map<std::string, T>& data_map) const {return (*this->dexp_l)(data_map) > (*this->dexp_r)(data_map);}
+	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) > (*this->dexp_r)(cb);}
 };
 
 template <typename T = float> class bigger_equal_judge_exp : public binary_judge_exp<T>
@@ -500,7 +492,7 @@ public:
 	bigger_equal_judge_exp(const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r) :
 		binary_judge_exp<T>(_dexp_l, _dexp_r) {}
 
-	virtual bool operator()(const std::map<std::string, T>& data_map) const {return (*this->dexp_l)(data_map) >= (*this->dexp_r)(data_map);}
+	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) >= (*this->dexp_r)(cb);}
 };
 
 template <typename T = float> class smaller_judge_exp : public binary_judge_exp<T>
@@ -509,7 +501,7 @@ public:
 	smaller_judge_exp(const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r) :
 		binary_judge_exp<T>(_dexp_l, _dexp_r) {}
 
-	virtual bool operator()(const std::map<std::string, T>& data_map) const {return (*this->dexp_l)(data_map) < (*this->dexp_r)(data_map);}
+	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) < (*this->dexp_r)(cb);}
 };
 
 template <typename T = float> class smaller_equal_judge_exp : public binary_judge_exp<T>
@@ -518,7 +510,7 @@ public:
 	smaller_equal_judge_exp(const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r) :
 		binary_judge_exp<T>(_dexp_l, _dexp_r) {}
 
-	virtual bool operator()(const std::map<std::string, T>& data_map) const {return (*this->dexp_l)(data_map) <= (*this->dexp_r)(data_map);}
+	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) <= (*this->dexp_r)(cb);}
 };
 
 template <typename T = float> class equal_judge_exp : public binary_judge_exp<T>
@@ -527,7 +519,7 @@ public:
 	equal_judge_exp(const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r) :
 		binary_judge_exp<T>(_dexp_l, _dexp_r) {}
 
-	virtual bool operator()(const std::map<std::string, T>& data_map) const {return (*this->dexp_l)(data_map) == (*this->dexp_r)(data_map);}
+	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) == (*this->dexp_r)(cb);}
 };
 
 template <typename T = float> class not_equal_judge_exp : public binary_judge_exp<T>
@@ -536,7 +528,7 @@ public:
 	not_equal_judge_exp(const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r) :
 		binary_judge_exp<T>(_dexp_l, _dexp_r) {}
 
-	virtual bool operator()(const std::map<std::string, T>& data_map) const {return (*this->dexp_l)(data_map) != (*this->dexp_r)(data_map);}
+	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) != (*this->dexp_r)(cb);}
 };
 
 template <typename T = float> inline std::shared_ptr<judge_exp<T>> make_binary_judge_exp(
@@ -564,7 +556,7 @@ public:
 	and_judge_exp(const std::shared_ptr<judge_exp<T>>& _jexp_l, const std::shared_ptr<judge_exp<T>>& _jexp_r) :
 		jexp_l(_jexp_l), jexp_r(_jexp_r) {}
 
-	virtual bool operator()(const std::map<std::string, T>& data_map) const {return (*jexp_l)(data_map) && (*jexp_r)(data_map);}
+	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*jexp_l)(cb) && (*jexp_r)(cb);}
 
 private:
 	std::shared_ptr<judge_exp<T>> jexp_l;
@@ -577,7 +569,7 @@ public:
 	or_judge_exp(const std::shared_ptr<judge_exp<T>>& _jexp_l, const std::shared_ptr<judge_exp<T>>& _jexp_r) :
 		jexp_l(_jexp_l), jexp_r(_jexp_r) {}
 
-	virtual bool operator()(const std::map<std::string, T>& data_map) const {return (*jexp_l)(data_map) || (*jexp_r)(data_map);}
+	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*jexp_l)(cb) || (*jexp_r)(cb);}
 
 private:
 	std::shared_ptr<judge_exp<T>> jexp_l;
@@ -609,9 +601,9 @@ public:
 	virtual std::shared_ptr<data_exp<T>> to_negative() const {return std::make_shared<question_exp<T>>(jexp, dexp_l, dexp_r, !negative);}
 	virtual void show_immediate_value() const {dexp_l->show_immediate_value(); dexp_r->show_immediate_value();}
 
-	virtual T operator()(const std::map<std::string, T>& data_map) const
+	virtual T operator()(const std::function<T(const std::string&)>& cb) const
 	{
-		auto re = (*jexp)(data_map) ? (*dexp_l)(data_map) : (*dexp_r)(data_map);
+		auto re = (*jexp)(cb) ? (*dexp_l)(cb) : (*dexp_r)(cb);
 		return negative ? -re : re;
 	}
 
