@@ -15,7 +15,10 @@ void print_time_spend(const struct timeval& begin)
 		--seconds;
 		microseconds += 1000000000;
 	}
-	printf("spent %ld seconds %ld microseconds:\n", seconds, microseconds);
+	if (seconds > 0)
+		printf("spent %ld s %ld us:\n", seconds, microseconds);
+	else
+		printf("spent %ld us:\n", microseconds);
 }
 #endif
 
@@ -168,9 +171,9 @@ int main(int argc, const char* argv[])
 				auto re = (*exp)(cb);
 #endif
 				if (re == inputs[i].exp_1)
-					printf(" %f\n", re);
+					std::cout << ' ' << re << std::endl;
 				else
-					printf(" UT failed, expected result: \033[31m%f\033[0m, actual result: \033[32m%f\033[0m\n", inputs[i].exp_1, re);
+					std::cout << " UT failed, expected result: \033[31m" << inputs[i].exp_1 << "\033[0m, actual result: \033[32m" << re << "\033[0m" << std::endl;
 
 				data_map["a"] = 100.f;
 				data_map["b"] = -1.f;
@@ -192,9 +195,9 @@ int main(int argc, const char* argv[])
 				re = (*exp)(cb);
 #endif
 				if (re == inputs[i].exp_2)
-					printf(" %f\n", re);
+					std::cout << ' ' << re << std::endl;
 				else
-					printf(" UT failed, expected result: \033[31m%f\033[0m, actual result: \033[32m%f\033[0m\n", inputs[i].exp_2, re);
+					std::cout << " UT failed, expected result: \033[31m" << inputs[i].exp_2 << "\033[0m, actual result: \033[32m" << re << "\033[0m" << std::endl;
 			}
 			catch (const std::exception& e) {puts(e.what());}
 			catch (const std::string& e) {puts(e.data());}
