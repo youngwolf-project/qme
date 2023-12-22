@@ -354,7 +354,7 @@ protected:
 	std::string variable_name;
 };
 
-template <typename T = float> inline std::shared_ptr<data_exp<T>> merge_data_exp(
+template <typename T> inline std::shared_ptr<data_exp<T>> merge_data_exp(
 	const std::shared_ptr<data_exp<T>>& dexp_l, const std::shared_ptr<data_exp<T>>& dexp_r, char op)
 {
 	if (dexp_r->is_immediate())
@@ -598,8 +598,9 @@ public:
 
 	virtual bool is_negative() const {return negative;}
 	virtual int get_depth() const {return std::max(dexp_l->get_depth(), dexp_r->get_depth());}
-	virtual std::shared_ptr<data_exp<T>> to_negative() const {return std::make_shared<question_exp<T>>(jexp, dexp_l, dexp_r, !negative);}
+
 	virtual void show_immediate_value() const {dexp_l->show_immediate_value(); dexp_r->show_immediate_value();}
+	virtual std::shared_ptr<data_exp<T>> to_negative() const {return std::make_shared<question_exp<T>>(jexp, dexp_l, dexp_r, !negative);}
 
 	virtual T operator()(const std::function<T(const std::string&)>& cb) const
 	{

@@ -124,16 +124,48 @@ int main(int argc, const char* argv[])
 //*/
 	};
 
-	std::map<std::string, float> data_map;
-	auto cb = [&](const std::string& variable_name) {
-		auto iter = data_map.find(variable_name);
-		if (iter == data_map.end())
+	auto cb = [](const std::map<std::string, float>& dm, const std::string& variable_name) {
+		auto iter = dm.find(variable_name);
+		if (iter == std::end(dm))
 			throw("undefined symbol " + variable_name);
 #ifdef DEBUG
 		std::cout << " get " << variable_name << " returns " << iter->second << std::endl;
 #endif
 		return iter->second;
 	};
+
+	std::map<std::string, float> dm_1;
+	///*
+	dm_1["a"] = -100.f;
+	dm_1["b"] = 1.f;
+	dm_1["c"] = 11.f;
+	//*/
+	/*
+	dm_1["a"] = -1.f;
+	dm_1["b"] = -1.f;
+	dm_1["c"] = -1.f;
+	dm_1["d"] = -1.f;
+	dm_1["e"] = -1.f;
+	dm_1["f"] = -1.f;
+	*/
+	auto cb_1 = [&](const std::string& variable_name) {return cb(dm_1, variable_name);};
+
+	std::map<std::string, float> dm_2;
+	///*
+	dm_2["a"] = 100.f;
+	dm_2["b"] = -1.f;
+	dm_2["c"] = -11.f;
+	//*/
+	/*
+	dm_2["a"] = -1.f;
+	dm_2["b"] = -1.f;
+	dm_2["c"] = -1.f;
+	dm_2["d"] = -1.f;
+	dm_2["e"] = -1.f;
+	dm_2["f"] = -1.f;
+	*/
+	auto cb_2 = [&](const std::string& variable_name) {return cb(dm_2, variable_name);};
+
 	for (size_t i = 0; i < sizeof(inputs) / sizeof(ut_input_and_expectation<>); ++i)
 	{
 		printf("compile the question mark expression: %s\n", inputs[i].input);
@@ -149,50 +181,26 @@ int main(int argc, const char* argv[])
 		{
 			try
 			{
-				///*
-				data_map["a"] = -100.f;
-				data_map["b"] = 1.f;
-				data_map["c"] = 11.f;
-				//*/
-				/*
-				data_map["a"] = -1.f;
-				data_map["b"] = -1.f;
-				data_map["c"] = -1.f;
-				data_map["d"] = -1.f;
-				data_map["e"] = -1.f;
-				data_map["f"] = -1.f;
-				*/
 				puts("perform the question mark expression:");
 #ifdef __linux__
 				gettimeofday(&begin, nullptr);
-				auto re = (*exp)(cb);
+				auto re = (*exp)(cb_1);
 				print_time_spend(begin);
 #else
-				auto re = (*exp)(cb);
+				auto re = (*exp)(cb_1);
 #endif
 				if (re == inputs[i].exp_1)
 					std::cout << ' ' << re << std::endl;
 				else
 					std::cout << " UT failed, expected result: \033[31m" << inputs[i].exp_1 << "\033[0m, actual result: \033[32m" << re << "\033[0m" << std::endl;
 
-				data_map["a"] = 100.f;
-				data_map["b"] = -1.f;
-				data_map["c"] = -11.f;
-				/*
-				data_map["a"] = -1.f;
-				data_map["b"] = -1.f;
-				data_map["c"] = -1.f;
-				data_map["d"] = -1.f;
-				data_map["e"] = -1.f;
-				data_map["f"] = -1.f;
-				*/
 				puts("perform the question mark expression again:");
 #ifdef __linux__
 				gettimeofday(&begin, nullptr);
-				re = (*exp)(cb);
+				re = (*exp)(cb_2);
 				print_time_spend(begin);
 #else
-				re = (*exp)(cb);
+				re = (*exp)(cb_2);
 #endif
 				if (re == inputs[i].exp_2)
 					std::cout << ' ' << re << std::endl;
@@ -206,5 +214,6 @@ int main(int argc, const char* argv[])
 		}
 		putchar('\n');
 	}
+
 	return 0;
 }
