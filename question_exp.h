@@ -593,23 +593,19 @@ template <typename T = float> class question_exp : public data_exp<T>
 {
 public:
 	question_exp(const std::shared_ptr<judge_exp<T>>& _jexp,
-		const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r, bool _negative = false) :
-		jexp(_jexp), dexp_l(_dexp_l), dexp_r(_dexp_r), negative(_negative) {}
+		const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r) :
+		jexp(_jexp), dexp_l(_dexp_l), dexp_r(_dexp_r) {}
 
-	virtual bool is_negative() const {return negative;}
-	virtual int get_depth() const {return std::max(dexp_l->get_depth(), dexp_r->get_depth());}
+	virtual int get_depth() const {return 1 + std::max(dexp_l->get_depth(), dexp_r->get_depth());}
 
 	virtual void show_immediate_value() const {dexp_l->show_immediate_value(); dexp_r->show_immediate_value();}
-	virtual std::shared_ptr<data_exp<T>> to_negative() const {return std::make_shared<question_exp<T>>(jexp, dexp_l, dexp_r, !negative);}
 
-	virtual T operator()(const std::function<T(const std::string&)>& cb) const
-	{
-		auto re = (*jexp)(cb) ? (*dexp_l)(cb) : (*dexp_r)(cb);
-		return negative ? -re : re;
-	}
+	virtual std::shared_ptr<data_exp<T>> to_negative() const
+		{return std::make_shared<question_exp<T>>(jexp, dexp_l->to_negative(), dexp_r->to_negative());}
+
+	virtual T operator()(const std::function<T(const std::string&)>& cb) const {return (*jexp)(cb) ? (*dexp_l)(cb) : (*dexp_r)(cb);}
 
 private:
-	bool negative;
 	std::shared_ptr<judge_exp<T>> jexp;
 	std::shared_ptr<data_exp<T>> dexp_l, dexp_r;
 };
