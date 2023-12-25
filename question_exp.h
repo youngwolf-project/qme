@@ -340,6 +340,7 @@ template <typename T = float> class variable_data_exp : public data_exp<T>
 public:
 	variable_data_exp(const std::string& _variable_name) : variable_name(_variable_name) {}
 
+	virtual const std::string& get_variable_name() const {return variable_name;}
 	virtual std::shared_ptr<data_exp<T>> to_negative() const {return std::make_shared<negative_data_exp<T>>(variable_name);}
 
 	virtual T operator()(const std::function<T(const std::string&)>& cb) const {return cb(variable_name);}
