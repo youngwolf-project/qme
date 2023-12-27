@@ -35,7 +35,8 @@ int main(int argc, const char* argv[])
 		//test merging of immediate values at compilation time
 		{"a ? a + 1 + 2 + 3 : 0", -94.f, 106.f}, //immediate values: 6, 0
 		{"a ? a + 1 / 2 + 3 : 0", -96.5f, 103.5f}, //immediate values: 3.5, 0
-		{"a ? a / 1 / 2 + 3 : 0", -47.f, 53.f}, //immediate values: 2, 3, 0
+		{"a ? a / 1 / 2 + 3 : 0", -47.f, 53.f}, //immediate values: 0.5, 3, 0
+		{"a ? a / 1 / 2 + (a + 3) : 0", -147.f, 153.f}, //immediate values: 1.5, 3, 0
 		{"a ? a / 1 + 2 + 3 : 0", -95.f, 105.f}, //immediate values: 5, 0
 		{"a ? (a + 1) + 2 + 3 : 0", -94.f, 106.f}, //immediate values: 6, 0
 		{"a ? (a + 1) + (2 + 3) : 0", -94.f, 106.f}, //immediate values: 6, 0
@@ -62,18 +63,31 @@ int main(int argc, const char* argv[])
 		{"a ? 3 / (b / 3) : 0", 9.f, -9.f}, //immediate values: 9, 0
 		{"a ? -(b + 2) + 2 : 0", -1.f, 1.f}, //immediate values: 0
 		{"a ? b * 2 * -2 : 0", -4.f, 4.f}, //immediate values: -4, 0
-		{"a ? b * 2 / -2 : 0", -1.f, 1.f}, //immediate values: -1, 0
+		{"a ? b * 2 / -2 : 0", -1.f, 1.f}, //immediate values: 0
 		{"a ? -(a * 10 + b) : 0", 999.f, -999.f}, //immediate values: -10, 0
-		{"a ? -(a / 10 - b) : 0", 11.f, -11.f}, //immediate values: 10, 0
+		{"a ? -(a / 10 - b) : 0", 11.f, -11.f}, //immediate values: 0.1, 0
+		{"a ? 1 / a : 0", -.01f, .01f}, //immediate values: 1, 0
 
 		//sub question expressions' immediate values will not be merged into superiors'
-		{"a ? 20 + (a > 0 ? a : 10) : 0", 30.f, 120.f}, //immediate values: 20, 10, 0
-		{"a ? (a > 0 ? a : 10) + 20 : 0", 30.f, 120.f}, //immediate values: 10, 20, 0
-		{"a ? 20 - (a > 0 ? a : 10) : 0", 10.f, -80.f}, //immediate values: 20, 10, 0
-		{"a ? (a > 0 ? a : 10) - 20 : 0", -10.f, 80.f}, //immediate values: 10, 20, 0
-		{"a ? -20 + -(a > 0 ? a : 10) : 0", -30.f, -120.f}, //immediate values: -20, 10, 0
-		{"a ? -(a > 0 ? a : 10) - 20 : 0", -30.f, -120.f}, //immediate values: 10, 20, 0
-		{"a ? -(a > 0 ? a : 10) + 20 : 0", 10.f, -80.f}, //immediate values: 20, 10, 0
+		{"a ? 20 + (a > 0 ? a : 10) : 0", 30.f, 120.f}, //immediate values: 20, 0 (from the judgement of the sub qme), 10, 0
+		{"a ? (a > 0 ? a : 10) + 20 : 0", 30.f, 120.f}, //immediate values: 0 (from the judgement of the sub qme), 10, 20, 0
+		{"a ? 20 - (a > 0 ? a : 10) : 0", 10.f, -80.f}, //immediate values: 20, 0 (from the judgement of the sub qme), 10, 0
+		{"a ? (a > 0 ? a : 10) - 20 : 0", -10.f, 80.f}, //immediate values: 0 (from the judgement of the sub qme), 10, 20, 0
+		{"a ? -20 + -(a > 0 ? a : 10) : 0", -30.f, -120.f}, //immediate values: -20, 0 (from the judgement of the sub qme), 10, 0
+		{"a ? -(a > 0 ? a : 10) - 20 : 0", -30.f, -120.f}, //immediate values: 0 (from the judgement of the sub qme), 10, 20, 0
+		{"a ? -(a > 0 ? a : 10) + 20 : 0", 10.f, -80.f}, //immediate values: 20, 0 (from the judgement of the sub qme), 10, 0
+
+		//test merging of same variables -- use multiplier or exponent
+		{"a ? a + a + b + b : 0", -198.f, 198.f}, //convert to 2 * a + 2 * b
+		{"a ? a + b + a + b : 0", -198.f, 198.f}, //convert to 2 * a + 2 * b
+		{"a ? 2 * a + a + a : 0", -400.f, 400.f}, //convert to 4 * a
+		{"a ? a + a + 2 * a : 0", -400.f, 400.f}, //convert to 4 * a
+		{"a ? a + a + a * 2 : 0", -400.f, 400.f}, //convert to 4 * a
+		{"a + a ? -a - a : 0", 200.f, -200.f}, //convert to 2 * a (judgement part) and -2 * a
+		{"a * a * a ? a * b * a * b : 0", 10000.f, 10000.f}, //convert to a^3 (judgement part) and a^2 * b^2
+		{"a ? 100 / a / a : 0", .01f, .01f}, //convert to 100 * (a^-2)
+		{"a ? a / a / a / a : 0", .0001f, .0001f}, //convert to a^-2
+		{"a ? a - (a + a) : 0", 100.f, -100.f}, //convert to -a
 ///*
 		//normal test
 		{"a > 0 ? (b < 0 ? b : -b) + 1 >= 0 ? c : -c : c > 0 ? -c : c", -11.f, -11.f},
@@ -207,10 +221,10 @@ int main(int argc, const char* argv[])
 				else
 					std::cout << " UT failed, expected result: \033[31m" << inputs[i].exp_2 << "\033[0m, actual result: \033[32m" << re << "\033[0m" << std::endl;
 			}
-			catch (const std::exception& e) {puts(e.what());}
-			catch (const std::string& e) {puts(e.data());}
-			catch (const char* e) {puts(e);}
-			catch (...) {puts("unknown exception happened!");}
+			catch (const std::exception& e) {printf("\033[31m%s\033[0m\n", e.what());}
+			catch (const std::string& e) {printf("\033[31m%s\033[0m\n", e.data());}
+			catch (const char* e) {printf("\033[31m%s\033[0m\n", e);}
+			catch (...) {puts("\033[31munknown exception happened!\033[0m");}
 		}
 		putchar('\n');
 	}
