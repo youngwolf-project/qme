@@ -494,12 +494,12 @@ public:
 			switch (other_op)
 			{
 			case '+':
-				if (1 != exponent || 1 != other_exp->get_exponent())
+				if (exponent != other_exp->get_exponent())
 					return false;
 				multiplier += other_exp->get_multiplier();
 				break;
 			case '-':
-				if (1 != exponent || 1 != other_exp->get_exponent())
+				if (exponent != other_exp->get_exponent())
 					return false;
 				multiplier -= other_exp->get_multiplier();
 				break;
