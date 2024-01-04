@@ -7,21 +7,32 @@ Compile once and execute any times with different values of the variables in the
 
 Quick start
 -
-Execute ./build.sh, if compilation error occurs, try to add -std=c++11 option.</br>
+Execute ./build.sh or ./build-release.sh, if compilation error occurs, try to add -std=c++11 option.</br>
 Then execute ./test_question_exp
 
 Example:
 -
 ```
+auto cb = [](const std::map<std::string, float>& dm, const std::string& variable_name) {
+	auto iter = dm.find(variable_name);
+	if (iter == std::end(dm))
+		throw("undefined symbol " + variable_name);
+#ifdef DEBUG
+	std::cout << " get " << variable_name << " returns " << iter->second << std::endl;
+#endif
+	return iter->second;
+};
+std::map<std::string, float> dm_1;
+dm_1["a"] = -100.f;
+dm_1["b"] = 1.f;
+dm_1["c"] = 11.f;
+auto cb_1 = [&](const std::string& variable_name) {return cb(dm_1, variable_name);};
+
 auto exp = qme::question_exp_parser<>::parse("a > 0 ? b > 0 ? b : 100 : c + 1");
 if (exp)
 {
-	std::map<std::string, float> data_map;
-	data_map["a"] = -100.f;
-	data_map["b"] = 1.f;
-	data_map["c"] = 11.f;
 	puts("perform the question mark expression:");
-	try {printf("%f\n", (*exp)(data_map));}
+	try {printf("%f\n", (*exp)(cb_1));}
 	catch (const std::exception& e) {puts(e.what());}
 	catch (const std::string& e) {puts(e.data());}
 	catch (const char* e) {puts(e);}
