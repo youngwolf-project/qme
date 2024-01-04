@@ -25,7 +25,7 @@ class O1 {public: static int level() {return 1;}};
 //don't exchange the data orders between multiply and divide operations, for example:
 // '2 * a / 3' will not be changed to '(2 / 3) * a', because the latter will always be zero for integer (1 ~ 8 bytes)
 // 'a * 2 / 3' will not be changed to 'a * (2 / 3)', because the latter will always be zero for integer (1 ~ 8 bytes)
-// 'a / 2 * 3' will not be changed to 'a / (2 / 3)'
+// 'a / 2 * 3' will not be changed to '(3 / 2) * a'
 // '2 / a * 3' will not be changed to '(2 * 3) / a'
 class O2 {public: static int level() {return 2;}};
 
@@ -104,6 +104,7 @@ public:
 	virtual std::shared_ptr<data_exp<T>> get_2nd_data() const {throw("unsupported get 2nd data operation!");}
 
 	virtual void show_immediate_value() const {}
+	virtual bool merge_with(char, const std::shared_ptr<data_exp<T>>&) {return false;}
 	virtual bool merge_with(const std::shared_ptr<data_exp<T>>&, char) {return false;}
 	virtual std::shared_ptr<data_exp<T>> trim_myself() {return std::shared_ptr<data_exp<T>>();}
 	virtual std::shared_ptr<data_exp<T>> final_optimize() {return std::shared_ptr<data_exp<T>>();}
@@ -116,6 +117,27 @@ public:
 /////////////////////////////////////////////////////////////////////////////////////////
 template <typename T, typename O>
 inline std::shared_ptr<data_exp<T>> merge_data_exp(const std::shared_ptr<data_exp<T>>&, const std::shared_ptr<data_exp<T>>&, char);
+template <typename T, typename O> class composite_variable_data_exp;
+template <typename T> class immediate_data_exp;
+
+template <typename T>
+inline bool is_same_composite_variable(const std::shared_ptr<data_exp<T>>& dexp_l, const std::shared_ptr<data_exp<T>>& dexp_r)
+{
+	return dexp_l->is_composite_variable() && dexp_r->is_composite_variable() &&
+		dexp_l->get_variable_name() == dexp_r->get_variable_name();
+}
+
+template <typename T>
+inline bool is_same_composite_variable(const std::string& variable_name, const std::shared_ptr<data_exp<T>>& other_exp)
+	{return other_exp->is_composite_variable() && variable_name == other_exp->get_variable_name();}
+
+template <typename T> inline bool is_divisible(T dividend, T divisor)
+{
+	if (0 == divisor)
+		throw("divide zero");
+
+	return 0 == dividend || 1 == divisor || -1 == divisor || dividend == divisor || -dividend == divisor;
+}
 
 template <typename T, typename O> class binary_data_exp : public data_exp<T>
 {
@@ -133,34 +155,42 @@ public:
 	virtual std::shared_ptr<data_exp<T>> get_2nd_data() const {return dexp_r;}
 
 	virtual void show_immediate_value() const {dexp_l->show_immediate_value(); dexp_r->show_immediate_value();}
-	virtual bool merge_with(const std::shared_ptr<data_exp<T>>& other_exp, char other_op)
+	virtual bool merge_with(char other_op, const std::shared_ptr<data_exp<T>>& other_exp)
 	{
 		if (is_same_operator_level<O>(op, other_op))
 		{
-			if (dexp_l->merge_with(other_exp, other_op))
+			if (dexp_l->merge_with(other_op, other_exp))
 				return true;
 			else if ('+' == op || '*' == op)
 			{
-				if (dexp_r->merge_with(other_exp, other_op))
+				if (dexp_r->merge_with(other_op, other_exp))
 					return true;
 			}
 			else if ('+' == other_op)
 			{
-				if (dexp_r->merge_with(other_exp, '-'))
+				if (dexp_r->merge_with('-', other_exp))
 					return true;
 			}
 			else if ('-' == other_op)
 			{
-				if (dexp_r->merge_with(other_exp, '+'))
+				if (dexp_r->merge_with('+', other_exp))
 					return true;
 			}
 			else if ('*' == other_op)
 			{
-				if (dexp_r->merge_with(other_exp, '/'))
+				if (dexp_r->merge_with('/', other_exp))
 					return true;
 			}
-			else if (dexp_r->merge_with(other_exp, '*')) //must be /
+			else if (dexp_r->merge_with('*', other_exp)) //must be /
 				return true;
+		}
+		else if (O::level() < 3 && '+' == other_op && '/' == op && //'N1*a^M / C + N2*a^M' -> '(N1 + N2*C)*a^M / C'
+			dexp_r->is_immediate() && is_same_composite_variable(dexp_l, other_exp) &&
+			dexp_l->get_exponent() == other_exp->get_exponent())
+		{
+			dexp_l = std::make_shared<composite_variable_data_exp<T, O>>(dexp_l->get_variable_name(),
+				dexp_l->get_multiplier() + other_exp->get_multiplier() * dexp_r->get_immediate_value(), dexp_l->get_exponent());
+			return true;
 		}
 
 		return false;
@@ -168,13 +198,23 @@ public:
 
 	virtual std::shared_ptr<data_exp<T>> trim_myself()
 	{
+		auto changed = false;
 		auto data = dexp_l->trim_myself();
 		if (data)
+		{
+			changed = true;
 			dexp_l = data;
+		}
 
 		data = dexp_r->trim_myself();
 		if (data)
+		{
+			changed = true;
 			dexp_r = data;
+		}
+
+		if (changed) //in case that composite_variable_data_exp turned out to be immediate_data_exp
+			return merge_data_exp<T, O>(dexp_l, dexp_r, op);
 
 		switch (op)
 		{
@@ -240,6 +280,23 @@ public:
 			}
 			if (dexp_l->is_negative() && dexp_r->is_negative())
 				return merge_data_exp<T, O>(dexp_l->to_negative(), dexp_r->to_negative(), '/');
+			else if (O::level() < 3 && is_same_composite_variable<T>(dexp_l, dexp_r))
+			{
+				//'N1*a^M1 / N2*a^M2' -> 'N1*a^(M1-M2) / N2' where M1 > M2 > 0
+				//for other conditions, we will handle them in composite_variable_data_exp's:
+				// merge_with, or
+				// trim_myself, or
+				// final_optimize, or
+				// cannot handle them with optimization level < 3
+				auto exponent_l = dexp_l->get_exponent(), exponent_r = dexp_r->get_exponent();
+				if (exponent_l > exponent_r && exponent_r > 0)
+				{
+					dexp_l = std::make_shared<composite_variable_data_exp<T, O>>(dexp_l->get_variable_name(),
+						dexp_l->get_multiplier(), exponent_l - exponent_r);
+					dexp_r = std::make_shared<immediate_data_exp<T>>(dexp_r->get_multiplier());
+					return trim_myself();
+				}
+			}
 			break;
 		}
 
@@ -369,15 +426,15 @@ public:
 	virtual bool has_2_level_immediate() const {return true;}
 	virtual T get_immediate_value() const {return value;}
 
-	virtual void show_immediate_value() const {std::cout << "  " << value << std::endl;}
-	virtual bool merge_with(const std::shared_ptr<data_exp<T>>& other_exp, char other_op)
-		{return other_exp->is_immediate() ? (merge_with(other_exp->get_immediate_value(), other_op), true) : false;}
+	virtual void show_immediate_value() const {std::cout << ' ' << value;}
+	virtual bool merge_with(char other_op, const std::shared_ptr<data_exp<T>>& other_exp)
+		{return other_exp->is_immediate() ? (merge_with(other_op, other_exp->get_immediate_value()), true) : false;}
 	virtual std::shared_ptr<data_exp<T>> to_negative() const {return std::make_shared<immediate_data_exp<T>>(-value);}
 
 	virtual T operator()(const std::function<T(const std::string&)>&) const {return value;}
 
 protected:
-	void merge_with(T v, char other_op)
+	void merge_with(char other_op, T v)
 	{
 		switch (other_op)
 		{
@@ -439,7 +496,7 @@ template <typename T> class exponent_data_exp : public data_exp<T>
 public:
 	exponent_data_exp(const std::string& _variable_name, int _exponent) : variable_name(_variable_name), exponent(_exponent) {}
 
-	virtual void show_immediate_value() const {{std::cout << "  " << exponent << std::endl;}}
+	virtual void show_immediate_value() const {{std::cout << ' ' << exponent;}}
 
 	virtual std::shared_ptr<data_exp<T>> to_negative() const
 		{return std::make_shared<negative_exponent_data_exp<T>>(variable_name, exponent);}
@@ -477,39 +534,51 @@ public:
 	virtual T get_multiplier() const {return multiplier;}
 	virtual const std::string& get_variable_name() const {return variable_name;}
 
-	virtual bool merge_with(const std::shared_ptr<data_exp<T>>& other_exp, char other_op)
+	virtual bool merge_with(char other_op, const std::shared_ptr<data_exp<T>>& other_exp)
 	{
 		if (other_exp->is_immediate())
 		{
-			if ('*' == other_op)
-				multiplier *= other_exp->get_immediate_value();
-			else if ('/' == other_op)
-				multiplier /= other_exp->get_immediate_value();
+			auto v = other_exp->get_immediate_value();
+			if ('*' == other_op && (O::level() > 2 || exponent >= 0))
+				multiplier *= v;
+			else if ('/' == other_op && (O::level() > 2 || exponent <= 0 || is_divisible(multiplier, v)))
+				multiplier /= v;
 			else
 				return false;
 		}
-		else if (!other_exp->is_composite_variable() || other_exp->get_variable_name() != variable_name)
+		else if (!is_same_composite_variable(variable_name, other_exp))
 			return false;
 		else
 			switch (other_op)
 			{
 			case '+':
-				if (exponent != other_exp->get_exponent())
+				if ((O::level() < 3 && exponent < 0) || exponent != other_exp->get_exponent())
 					return false;
 				multiplier += other_exp->get_multiplier();
 				break;
 			case '-':
-				if (exponent != other_exp->get_exponent())
+				if ((O::level() < 3 && exponent < 0) || exponent != other_exp->get_exponent())
 					return false;
 				multiplier -= other_exp->get_multiplier();
 				break;
 			case '*':
-				multiplier *= other_exp->get_multiplier();
-				exponent += other_exp->get_exponent();
+				if (O::level() > 2 || (exponent >= 0 && other_exp->get_exponent() >= 0))
+				{
+					multiplier *= other_exp->get_multiplier();
+					exponent += other_exp->get_exponent();
+				}
+				else
+					return false;
 				break;
 			case '/':
-				multiplier /= other_exp->get_multiplier();
-				exponent -= other_exp->get_exponent();
+				if (O::level() > 2 || (other_exp->get_exponent() >= 0 && //for this exponent, negative is also okay
+					(other_exp->get_exponent() >= exponent || is_divisible(multiplier, other_exp->get_multiplier()))))
+				{
+					multiplier /= other_exp->get_multiplier();
+					exponent -= other_exp->get_exponent();
+				}
+				else
+					return false;
 				break;
 			default:
 				throw("undefined operator " + std::string(1, other_op));
@@ -517,6 +586,35 @@ public:
 			}
 
 		return true;
+	}
+
+	//handle 'C * Na^M' and 'C / Na^M' only
+	virtual bool merge_with(const std::shared_ptr<data_exp<T>>& other_exp, char other_op)
+	{
+		if (other_exp->is_immediate())
+		{
+			if ('*' == other_op)
+				return merge_with('*', other_exp);
+			else if ('/' == other_op && (O::level() > 2 || exponent >= 0))
+			{
+				if (0 == multiplier)
+					throw("divide zero");
+
+				multiplier = other_exp->get_immediate_value() / multiplier;
+				exponent = -exponent;
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	virtual std::shared_ptr<data_exp<T>> trim_myself()
+	{
+		if (0 == multiplier || 0 == exponent)
+			return std::make_shared<immediate_data_exp<T>>(multiplier);
+
+		return std::shared_ptr<data_exp<T>>();
 	}
 
 	virtual std::shared_ptr<data_exp<T>> final_optimize()
@@ -530,8 +628,10 @@ public:
 			data = std::make_shared<multi_data_exp<T, O>>(data_1, std::make_shared<variable_data_exp<T>>(variable_name));
 		else if (-1 == exponent)
 			data = std::make_shared<div_data_exp<T, O>>(data_1, std::make_shared<variable_data_exp<T>>(variable_name));
-		else
+		else if (exponent > 1)
 			data = std::make_shared<multi_data_exp<T, O>>(data_1, std::make_shared<exponent_data_exp<T>>(variable_name, exponent));
+		else // < -1
+			data = std::make_shared<div_data_exp<T, O>>(data_1, std::make_shared<exponent_data_exp<T>>(variable_name, -exponent));
 
 		auto re = data->trim_myself();
 		return re ? re : data;
@@ -551,24 +651,12 @@ private:
 template <typename T, typename O> inline std::shared_ptr<data_exp<T>> merge_data_exp(
 	const std::shared_ptr<data_exp<T>>& dexp_l, const std::shared_ptr<data_exp<T>>& dexp_r, char op)
 {
-	if (is_operator_2(op) && dexp_l->is_immediate() && dexp_r->is_composite_variable())
+	if (dexp_r->merge_with(dexp_l, op)) //parse 'C * Na^M' and 'C / Na^M' to composite_variable_data_exp instead of binary_data_exp
 	{
-		if ('*' == op)
-		{
-			dexp_r->merge_with(dexp_l, '*');
-			return dexp_r;
-		}
-		else
-		{
-			if (0 == dexp_r->get_multiplier())
-				throw("divide zero");
-
-			return std::make_shared<composite_variable_data_exp<T, O>>(dexp_r->get_variable_name(),
-				dexp_l->get_immediate_value() / dexp_r->get_multiplier(), -dexp_r->get_exponent());
-		}
+		auto data = dexp_r->trim_myself();
+		return data ? data : dexp_r;
 	}
-
-	if (dexp_l->merge_with(dexp_r, op)) //composite_variable_data_exp is involved at here
+	else if (dexp_l->merge_with(op, dexp_r)) //composite_variable_data_exp is involved at here
 	{
 		auto data = dexp_l->trim_myself();
 		return data ? data : dexp_l;
@@ -586,7 +674,7 @@ template <typename T, typename O> inline std::shared_ptr<data_exp<T>> merge_data
 		if (is_same_operator_level<O>(op, op_2))
 		{
 			std::shared_ptr<data_exp<T>> data;
-			if (dexp_l->merge_with(dexp_r->get_1st_data(), op))
+			if (dexp_l->merge_with(op, dexp_r->get_1st_data()))
 			{
 				data = dexp_l->trim_myself();
 				if (!data)
@@ -600,6 +688,16 @@ template <typename T, typename O> inline std::shared_ptr<data_exp<T>> merge_data
 			else if ('/' == op)
 				op_2 = '/' == op_2 ? '*' : '/';
 			return merge_data_exp<T, O>(data, dexp_r->get_2nd_data(), op_2);
+		}
+		else if (O::level() < 3 && '+' == op && '/' == op_2 && //'N1*a^M + N2*a^M / C' -> '(N1*C + N2)*a^M / C'
+			dexp_r->get_2nd_data()->is_immediate() && is_same_composite_variable(dexp_l, dexp_r->get_1st_data()) &&
+			dexp_l->get_exponent() == dexp_r->get_1st_data()->get_exponent())
+		{
+			auto multiplier = dexp_l->get_multiplier() * dexp_r->get_2nd_data()->get_immediate_value() +
+				dexp_r->get_1st_data()->get_multiplier();
+			return merge_data_exp<T, O>(
+				std::make_shared<composite_variable_data_exp<T, O>>(dexp_l->get_variable_name(), multiplier, dexp_l->get_exponent()),
+				dexp_r->get_2nd_data(), '/');
 		}
 	}
 
@@ -828,26 +926,19 @@ template <typename T> class question_exp : public data_exp<T>
 {
 public:
 	question_exp(const std::shared_ptr<judge_exp<T>>& _jexp,
-		const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r) :
-		jexp(_jexp), dexp_l(_dexp_l), dexp_r(_dexp_r) {}
+		const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r) : jexp(_jexp)
+	{
+		auto data = _dexp_l->final_optimize();
+		dexp_l = data ? data : _dexp_l;
+
+		data = _dexp_r->final_optimize();
+		dexp_r = data ? data : _dexp_r;
+	}
 
 	virtual int get_depth() const {return 1 + std::max(dexp_l->get_depth(), dexp_r->get_depth());}
 
 	virtual void show_immediate_value() const
 		{jexp->show_immediate_value(); dexp_l->show_immediate_value(); dexp_r->show_immediate_value();}
-
-	virtual std::shared_ptr<data_exp<T>> final_optimize()
-	{
-		auto data = dexp_l->final_optimize();
-		if (data)
-			dexp_l = data;
-
-		data = dexp_r->final_optimize();
-		if (data)
-			dexp_r = data;
-
-		return std::shared_ptr<data_exp<T>>();
-	}
 
 	virtual std::shared_ptr<data_exp<T>> to_negative() const
 		{return std::make_shared<negative_question_exp<T>>(jexp, dexp_l, dexp_r);}
@@ -972,9 +1063,9 @@ public:
 			if (final_re)
 				re = final_re;
 #ifdef DEBUG
-			printf(" max depth: %d\n", re->get_depth());
-			puts(" immediate values:");
+			printf(" max depth: %d\n immediate values:", re->get_depth());
 			re->show_immediate_value();
+			putchar('\n');
 #endif
 			return re;
 		}
@@ -1268,12 +1359,7 @@ private:
 		if (is_key_2(vov) || is_key_1(vov))
 			throw("unexpected " + vov);
 		else if (0 == isdigit(vov[0])) //variable
-		{
-			if (O::level() > 2)
-				return std::make_shared<composite_variable_data_exp<T, O>>(vov);
-
-			return std::make_shared<variable_data_exp<T>>(vov);
-		}
+			return std::make_shared<composite_variable_data_exp<T, O>>(vov);
 		else if (std::string::npos != vov.find('.') || std::string::npos != vov.find('e') || std::string::npos != vov.find('E'))
 			//todo, verify float data
 			return std::make_shared<immediate_data_exp<T>>((T) atof(vov.data())); //float

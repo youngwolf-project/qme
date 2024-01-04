@@ -30,7 +30,6 @@ template <typename T = float> struct ut_input_and_expectation
 
 int main(int argc, const char* argv[])
 {
-	//qme::question_exp_parser<int>::parse("(a <= 0 && b <= 0 && c <= 0 && d <= 0 && e <= 0 && f <= 0) ? 0 : (a > 0) ? a : (b > 0) ? b : (c > 0) ? c : (d > 0) ? d : (e > 0) ? e : (f > 0) ? f : -1");
 	const ut_input_and_expectation<> inputs[] = {
 		//test merging of immediate values at compilation time
 		{"a ? a + 1 + 2 + 3 : 0", -94.f, 106.f}, //immediate values: 6, 0
@@ -85,8 +84,8 @@ int main(int argc, const char* argv[])
 		{"a ? a + a + a * 2 : 0", -400.f, 400.f}, //convert to 4 * a
 		{"a + a ? -a - a : 0", 200.f, -200.f}, //convert to 2 * a (judgement part) and -2 * a
 		{"a * a * a ? a * b * a * b : 0", 10000.f, 10000.f}, //convert to a^3 (judgement part) and a^2 * b^2
-		{"a ? 100 / a / a : 0", .01f, .01f}, //convert to 100 * (a^-2)
-		{"a ? a / a / a / a : 0", .0001f, .0001f}, //convert to a^-2
+		{"a ? 100 / a / a : 0", .01f, .01f}, //convert to 100 / (a^2)
+		{"a ? a / a / a / a : 0", .0001f, .0001f}, //convert to 1 / a^2
 		{"a ? a - (a + a) : 0", 100.f, -100.f}, //convert to -a
 ///*
 		//normal test
@@ -188,11 +187,13 @@ int main(int argc, const char* argv[])
 		struct timeval begin;
 		gettimeofday(&begin, nullptr);
 		//auto exp = qme::question_exp_parser<int, qme::O2>::parse(inputs[i].input); //for integer, do not use optimization level 3
-		auto exp = qme::question_exp_parser<>::parse(inputs[i].input);
+		//auto exp = qme::question_exp_parser<float, qme::O2>::parse(inputs[i].input); //for float, any optimization level is OK
+		auto exp = qme::question_exp_parser<>::parse(inputs[i].input); //for float (default), the default optimization level is 3
 		print_time_spend(begin);
 #else
 		//auto exp = qme::question_exp_parser<int, qme::O2>::parse(inputs[i].input); //for integer, do not use optimization level 3
-		auto exp = qme::question_exp_parser<>::parse(inputs[i].input);
+		//auto exp = qme::question_exp_parser<float, qme::O2>::parse(inputs[i].input); //for float, any optimization level is OK
+		auto exp = qme::question_exp_parser<>::parse(inputs[i].input); //for float (default), the default optimization level is 3
 #endif
 		if (exp)
 		{
