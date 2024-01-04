@@ -1,26 +1,25 @@
 
 #include "question_exp.h"
 
-#ifdef __unix__
-#include <sys/time.h>
-void print_time_spend(const struct timeval& begin)
+#include <chrono>
+class cpu_timer //a substitute of boost::timer::cpu_timer
 {
-	struct timeval end;
-	gettimeofday(&end, nullptr);
+public:
+	cpu_timer() {restart();}
 
-	auto seconds = end.tv_sec - begin.tv_sec;
-	auto microseconds = end.tv_usec - begin.tv_usec;
-	if (microseconds < 0)
-	{
-		--seconds;
-		microseconds += 1000000000;
-	}
-	if (seconds > 0)
-		printf("spent %ld s %ld us.\n", seconds, microseconds);
-	else
-		printf("spent %ld us.\n", microseconds);
-}
-#endif
+	void restart() {started = false; elapsed_seconds = .0f; start();}
+	void start() {if (started) return; started = true; start_time = std::chrono::system_clock::now();}
+	void resume() {start();}
+	void stop() {if (!started) return; started = false; elapsed_seconds += std::chrono::duration_cast<std::chrono::duration<float>>(std::chrono::system_clock::now() - start_time).count();}
+
+	bool stopped() const {return !started;}
+	float elapsed() const {if (!started) return elapsed_seconds; return std::chrono::duration_cast<std::chrono::duration<float>>(std::chrono::system_clock::now() - start_time).count();}
+
+protected:
+	bool started;
+	float elapsed_seconds;
+	std::chrono::system_clock::time_point start_time;
+};
 
 template <typename T = float> struct ut_input_and_expectation
 {
@@ -91,7 +90,7 @@ int main(int argc, const char* argv[])
 		{"a ? a - (a + a) : 0", 100.f, -100.f}, //convert to -a
 		{"a ? 2 * a * a * a / (3 * a * a) : 0", -66.666672f, 66.666672f}, //convert to 0.666667 * a
 		{"a ? 2 * a * a / (3 * a * a * a) : 0", -0.006666667f, 0.006666667f}, //convert to 0.666667 / a
-///*
+		///*
 		//normal test
 		{"a > 0 ? (b < 0 ? b : -b) + 1 >= 0 ? c : -c : c > 0 ? -c : c", -11.f, -11.f},
 		{"(a + b > 0 && b > 0 || c > 0) ? ((a > 0 && b > 0) ? +a + b + 1 : - c + 1 + 2) : ((a < 0 || b < 0) ? a - b : c)", -8.f, 101.f},
@@ -138,7 +137,7 @@ int main(int argc, const char* argv[])
 		{"!(a > 0) ? a : b : c : 0"},
 		{"-!a ? 1 : 2"},
 		{"+!a ? 1 : 2"},
-//*/
+		//*/
 	};
 
 	auto cb = [](const std::map<std::string, float>& dm, const std::string& variable_name) {
@@ -183,33 +182,25 @@ int main(int argc, const char* argv[])
 	*/
 	auto cb_2 = [&](const std::string& variable_name) {return cb(dm_2, variable_name);};
 
+	cpu_timer timer;
 	auto compile_succ = 0, exec_succ = 0, match = 0;
 	for (size_t i = 0; i < sizeof(inputs) / sizeof(ut_input_and_expectation<>); ++i)
 	{
 		printf("compile the question mark expression: %s\n", inputs[i].input);
-#ifdef __unix__
-		struct timeval begin;
-		gettimeofday(&begin, nullptr);
-#endif
+		timer.restart();
 		//auto exp = qme::question_exp_parser<int, qme::O2>::parse(inputs[i].input); //for integer, do not use optimization level 3
 		//auto exp = qme::question_exp_parser<float, qme::O2>::parse(inputs[i].input); //for float, any optimization level is OK
 		auto exp = qme::question_exp_parser<>::parse(inputs[i].input); //for float (default), the default optimization level is 3
-#ifdef __unix__
-		print_time_spend(begin);
-#endif
+		printf("spent %f seconds.\n", timer.elapsed());
 		if (exp)
 		{
 			++compile_succ;
 			try
 			{
 				puts("perform the question mark expression:");
-#ifdef __unix__
-				gettimeofday(&begin, nullptr);
+				timer.restart();
 				auto re = (*exp)(cb_1);
-				print_time_spend(begin);
-#else
-				auto re = (*exp)(cb_1);
-#endif
+				printf("spent %f seconds.\n", timer.elapsed());
 				++exec_succ;
 				if (re == inputs[i].exp_1)
 				{
@@ -220,13 +211,9 @@ int main(int argc, const char* argv[])
 					std::cout << " UT failed, expected result: \033[31m" << inputs[i].exp_1 << "\033[0m, actual result: \033[32m" << re << "\033[0m" << std::endl;
 
 				puts("perform the question mark expression again:");
-#ifdef __unix__
-				gettimeofday(&begin, nullptr);
+				timer.restart();
 				re = (*exp)(cb_2);
-				print_time_spend(begin);
-#else
-				re = (*exp)(cb_2);
-#endif
+				printf("spent %f seconds.\n", timer.elapsed());
 				++exec_succ;
 				if (re == inputs[i].exp_2)
 				{

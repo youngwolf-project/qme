@@ -11,6 +11,10 @@
 #include <list>
 #include <map>
 
+#if defined(_MSC_VER) && defined(_DEBUG) && !defined(DEBUG)
+#define DEBUG
+#endif
+
 namespace qme
 {
 
