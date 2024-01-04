@@ -1,7 +1,7 @@
 
 #include "question_exp.h"
 
-#ifdef __linux__
+#ifdef __unix__
 #include <sys/time.h>
 void print_time_spend(const struct timeval& begin)
 {
@@ -187,17 +187,15 @@ int main(int argc, const char* argv[])
 	for (size_t i = 0; i < sizeof(inputs) / sizeof(ut_input_and_expectation<>); ++i)
 	{
 		printf("compile the question mark expression: %s\n", inputs[i].input);
-#ifdef __linux__
+#ifdef __unix__
 		struct timeval begin;
 		gettimeofday(&begin, nullptr);
+#endif
 		//auto exp = qme::question_exp_parser<int, qme::O2>::parse(inputs[i].input); //for integer, do not use optimization level 3
 		//auto exp = qme::question_exp_parser<float, qme::O2>::parse(inputs[i].input); //for float, any optimization level is OK
 		auto exp = qme::question_exp_parser<>::parse(inputs[i].input); //for float (default), the default optimization level is 3
+#ifdef __unix__
 		print_time_spend(begin);
-#else
-		//auto exp = qme::question_exp_parser<int, qme::O2>::parse(inputs[i].input); //for integer, do not use optimization level 3
-		//auto exp = qme::question_exp_parser<float, qme::O2>::parse(inputs[i].input); //for float, any optimization level is OK
-		auto exp = qme::question_exp_parser<>::parse(inputs[i].input); //for float (default), the default optimization level is 3
 #endif
 		if (exp)
 		{
@@ -205,7 +203,7 @@ int main(int argc, const char* argv[])
 			try
 			{
 				puts("perform the question mark expression:");
-#ifdef __linux__
+#ifdef __unix__
 				gettimeofday(&begin, nullptr);
 				auto re = (*exp)(cb_1);
 				print_time_spend(begin);
@@ -222,7 +220,7 @@ int main(int argc, const char* argv[])
 					std::cout << " UT failed, expected result: \033[31m" << inputs[i].exp_1 << "\033[0m, actual result: \033[32m" << re << "\033[0m" << std::endl;
 
 				puts("perform the question mark expression again:");
-#ifdef __linux__
+#ifdef __unix__
 				gettimeofday(&begin, nullptr);
 				re = (*exp)(cb_2);
 				print_time_spend(begin);
