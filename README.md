@@ -7,7 +7,7 @@ Compile once and execute any times with different values of the variables in the
 
 Quick start
 -
-Execute ./build.sh or ./build-release.sh, if compilation error occurs, try to add -std=c++11 option.</br>
+Execute make or make debug, if compilation error occurs, try to add -std=c++11 option.</br>
 Then execute ./test_question_exp
 
 Example:
