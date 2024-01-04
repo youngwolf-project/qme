@@ -16,9 +16,9 @@ void print_time_spend(const struct timeval& begin)
 		microseconds += 1000000000;
 	}
 	if (seconds > 0)
-		printf("spent %ld s %ld us:\n", seconds, microseconds);
+		printf("spent %ld s %ld us.\n", seconds, microseconds);
 	else
-		printf("spent %ld us:\n", microseconds);
+		printf("spent %ld us.\n", microseconds);
 }
 #endif
 
@@ -31,7 +31,8 @@ template <typename T = float> struct ut_input_and_expectation
 int main(int argc, const char* argv[])
 {
 	const ut_input_and_expectation<> inputs[] = {
-		//test merging of immediate values at compilation time
+		//test merging of immediate values at compilation time (O3)
+		//for O2, immediate values can be different, please note
 		{"a ? a + 1 + 2 + 3 : 0", -94.f, 106.f}, //immediate values: 6, 0
 		{"a ? a + 1 / 2 + 3 : 0", -96.5f, 103.5f}, //immediate values: 3.5, 0
 		{"a ? a / 1 / 2 + 3 : 0", -47.f, 53.f}, //immediate values: 0.5, 3, 0
@@ -76,7 +77,8 @@ int main(int argc, const char* argv[])
 		{"a ? -(a > 0 ? a : 10) - 20 : 0", -30.f, -120.f}, //immediate values: 0 (from the judgement of the sub qme), 10, 20, 0
 		{"a ? -(a > 0 ? a : 10) + 20 : 0", 10.f, -80.f}, //immediate values: 20, 0 (from the judgement of the sub qme), 10, 0
 
-		//test merging of same variables -- use multiplier or exponent
+		//test merging of same variables -- use multiplier or exponent (O3)
+		//for O2, immediate values can be different, please note
 		{"a ? a + a + b + b : 0", -198.f, 198.f}, //convert to 2 * a + 2 * b
 		{"a ? a + b + a + b : 0", -198.f, 198.f}, //convert to 2 * a + 2 * b
 		{"a ? 2 * a + a + a : 0", -400.f, 400.f}, //convert to 4 * a
@@ -87,6 +89,8 @@ int main(int argc, const char* argv[])
 		{"a ? 100 / a / a : 0", .01f, .01f}, //convert to 100 / (a^2)
 		{"a ? a / a / a / a : 0", .0001f, .0001f}, //convert to 1 / a^2
 		{"a ? a - (a + a) : 0", 100.f, -100.f}, //convert to -a
+		{"a ? 2 * a * a * a / (3 * a * a) : 0", -66.666672f, 66.666672f}, //convert to 0.666667 * a
+		{"a ? 2 * a * a / (3 * a * a * a) : 0", -0.006666667f, 0.006666667f}, //convert to 0.666667 / a
 ///*
 		//normal test
 		{"a > 0 ? (b < 0 ? b : -b) + 1 >= 0 ? c : -c : c > 0 ? -c : c", -11.f, -11.f},
