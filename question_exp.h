@@ -428,13 +428,13 @@ public:
 
 	virtual void show_immediate_value() const {std::cout << ' ' << value;}
 	virtual bool merge_with(char other_op, const std::shared_ptr<data_exp<T>>& other_exp)
-		{return other_exp->is_immediate() ? (merge_with(other_op, other_exp->get_immediate_value()), true) : false;}
+		{return other_exp->is_immediate() ? (do_merge_with(other_op, other_exp->get_immediate_value()), true) : false;}
 	virtual std::shared_ptr<data_exp<T>> to_negative() const {return std::make_shared<immediate_data_exp<T>>(-value);}
 
 	virtual T operator()(const std::function<T(const std::string&)>&) const {return value;}
 
 protected:
-	void merge_with(char other_op, T v)
+	void do_merge_with(char other_op, T v)
 	{
 		switch (other_op)
 		{
