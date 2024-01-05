@@ -90,7 +90,9 @@ int main(int argc, const char* argv[])
 		{"a ? a - (a + a) : 0", 100.f, -100.f}, //convert to -a
 		{"a ? 2 * a * a * a / (3 * a * a) : 0", -66.666672f, 66.666672f}, //convert to 0.666667 * a
 		{"a ? 2 * a * a / (3 * a * a * a) : 0", -0.006666667f, 0.006666667f}, //convert to 0.666667 / a
-		///*
+		{"a ? b * 2 * a * c * 10 * b * a : 0", 2.2e6f, -2.2e6f}, //convert to 20 * b^2 * a^2 * c
+		{"a ? b * 2 * a / c * 10 * b * a : 0", 18181.818f, -18181.818f}, //convert to 20 * b^2 * a^2 / c
+
 		//normal test
 		{"a > 0 ? (b < 0 ? b : -b) + 1 >= 0 ? c : -c : c > 0 ? -c : c", -11.f, -11.f},
 		{"(a + b > 0 && b > 0 || c > 0) ? ((a > 0 && b > 0) ? +a + b + 1 : - c + 1 + 2) : ((a < 0 || b < 0) ? a - b : c)", -8.f, 101.f},
@@ -137,16 +139,12 @@ int main(int argc, const char* argv[])
 		{"!(a > 0) ? a : b : c : 0"},
 		{"-!a ? 1 : 2"},
 		{"+!a ? 1 : 2"},
-		//*/
 	};
 
 	auto cb = [](const std::map<std::string, float>& dm, const std::string& variable_name) {
 		auto iter = dm.find(variable_name);
 		if (iter == std::end(dm))
 			throw("undefined symbol " + variable_name);
-#ifdef DEBUG
-		std::cout << " get " << variable_name << " returns " << iter->second << std::endl;
-#endif
 		return iter->second;
 	};
 

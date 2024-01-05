@@ -412,11 +412,12 @@ public:
 
 	virtual T operator()(const std::function<T(const std::string&)>& cb) const
 	{
-		auto v = (*binary_data_exp<T, O>::get_2nd_data())(cb);
-		if (0 == v)
+		//keep the order of data fetching for debuging
+		auto dividend = (*binary_data_exp<T, O>::get_1st_data())(cb), divisor = (*binary_data_exp<T, O>::get_2nd_data())(cb);
+		if (0 == divisor)
 			throw("divide zero");
 
-		return (*binary_data_exp<T, O>::get_1st_data())(cb) / v;
+		return dividend / divisor;
 	}
 };
 
@@ -435,7 +436,13 @@ public:
 		{return other_exp->is_immediate() ? (do_merge_with(other_op, other_exp->get_immediate_value()), true) : false;}
 	virtual std::shared_ptr<data_exp<T>> to_negative() const {return std::make_shared<immediate_data_exp<T>>(-value);}
 
-	virtual T operator()(const std::function<T(const std::string&)>&) const {return value;}
+	virtual T operator()(const std::function<T(const std::string&)>&) const
+	{
+#ifdef DEBUG
+		std::cout << " get immediate value " << value << std::endl;
+#endif
+		return value;
+	}
 
 protected:
 	void do_merge_with(char other_op, T v)
@@ -474,7 +481,15 @@ public:
 
 	virtual std::shared_ptr<data_exp<T>> to_negative() const {return std::make_shared<negative_data_exp<T>>(variable_name);}
 
-	virtual T operator()(const std::function<T(const std::string&)>& cb) const {return cb(variable_name);}
+	virtual T operator()(const std::function<T(const std::string&)>& cb) const
+	{
+#ifdef DEBUG
+		auto v = cb(variable_name);
+		std::cout << " get " << variable_name << " returns " << v << std::endl;
+		return v;
+#endif
+		return cb(variable_name);
+	}
 
 protected:
 	std::shared_ptr<data_exp<T>> clone() const {return std::make_shared<variable_data_exp<T>>(variable_name);}
@@ -505,7 +520,15 @@ public:
 	virtual std::shared_ptr<data_exp<T>> to_negative() const
 		{return std::make_shared<negative_exponent_data_exp<T>>(variable_name, exponent);}
 
-	virtual T operator()(const std::function<T(const std::string&)>& cb) const {return (T) pow(cb(variable_name), exponent);}
+	virtual T operator()(const std::function<T(const std::string&)>& cb) const
+	{
+#ifdef DEBUG
+		auto v = cb(variable_name);
+		std::cout << " get " << variable_name << " returns " << v << std::endl;
+		return (T) pow(v, exponent);
+#endif
+		return (T) pow(cb(variable_name), exponent);
+	}
 
 protected:
 	std::shared_ptr<data_exp<T>> clone() const {return std::make_shared<exponent_data_exp<T>>(variable_name, exponent);}
