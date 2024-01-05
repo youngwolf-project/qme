@@ -27,6 +27,22 @@ template <typename T = float> struct ut_input_and_expectation
 	T exp_1, exp_2;
 };
 
+template<typename T> void execute_qme(cpu_timer& timer, const std::shared_ptr<qme::data_exp<T>>& exp,
+	const std::function<T(const std::string&)>& cb, T exp_re, int& exec_succ, int& match)
+{
+	timer.restart();
+	auto re = (*exp)(cb);
+	printf("spent %f seconds.\n", timer.elapsed());
+	++exec_succ;
+	if (re == exp_re)
+	{
+		++match;
+		std::cout << ' ' << re << std::endl;
+	}
+	else
+		std::cout << " UT failed, expected result: \033[31m" << exp_re << "\033[0m, actual result: \033[32m" << re << "\033[0m" << std::endl;
+}
+
 int main(int argc, const char* argv[])
 {
 	const ut_input_and_expectation<> inputs[] = {
@@ -186,9 +202,15 @@ int main(int argc, const char* argv[])
 	{
 		printf("compile the question mark expression: %s\n", inputs[i].input);
 		timer.restart();
-		//auto exp = qme::question_exp_parser<int, qme::O2>::parse(inputs[i].input); //for integer, do not use optimization level 3
-		//auto exp = qme::question_exp_parser<float, qme::O2>::parse(inputs[i].input); //for float, any optimization level is OK
-		auto exp = qme::question_exp_parser<>::parse(inputs[i].input); //for float (default), the default optimization level is 3
+#if 0
+		typedef int D;
+		typedef qme::O2 O; //for integer, do not use optimization level 3
+#else
+		typedef float D;
+		//typedef qme::O2 O; //for float, any optimization level is OK
+		typedef qme::O3 O; //for float (default), the default and suggested optimization level is 3
+#endif
+		auto exp = qme::question_exp_parser<D, O>::parse(inputs[i].input);
 		printf("spent %f seconds.\n", timer.elapsed());
 		if (exp)
 		{
@@ -196,30 +218,10 @@ int main(int argc, const char* argv[])
 			try
 			{
 				puts("perform the question mark expression:");
-				timer.restart();
-				auto re = (*exp)(cb_1);
-				printf("spent %f seconds.\n", timer.elapsed());
-				++exec_succ;
-				if (re == inputs[i].exp_1)
-				{
-					++match;
-					std::cout << ' ' << re << std::endl;
-				}
-				else
-					std::cout << " UT failed, expected result: \033[31m" << inputs[i].exp_1 << "\033[0m, actual result: \033[32m" << re << "\033[0m" << std::endl;
+				execute_qme<D>(timer, exp, cb_1, inputs[i].exp_1, exec_succ, match);
 
 				puts("perform the question mark expression again:");
-				timer.restart();
-				re = (*exp)(cb_2);
-				printf("spent %f seconds.\n", timer.elapsed());
-				++exec_succ;
-				if (re == inputs[i].exp_2)
-				{
-					++match;
-					std::cout << ' ' << re << std::endl;
-				}
-				else
-					std::cout << " UT failed, expected result: \033[31m" << inputs[i].exp_2 << "\033[0m, actual result: \033[32m" << re << "\033[0m" << std::endl;
+				execute_qme<D>(timer, exp, cb_2, inputs[i].exp_2, exec_succ, match);
 			}
 			catch (const std::exception& e) {printf("\033[31m%s\033[0m\n", e.what());}
 			catch (const std::string& e) {printf("\033[31m%s\033[0m\n", e.data());}
