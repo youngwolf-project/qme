@@ -153,6 +153,34 @@ public:
 		{return is_operator_2(op) && (dexp_l->has_2_level_immediate() || dexp_r->has_2_level_immediate());}
 
 	virtual bool is_composite() const {return true;}
+	virtual bool is_negative() const
+	{
+		//'-a - b', '-a * b', 'a * -b', '-a / b' and 'a / -b' are considered to be negative
+		//following expressions are impossible, see trim_myself for more details
+		// '-a + -b'	will be changed to '-a - b'
+		// '-a + b'		will be changed to 'b - a'
+		// '-a - -b'	will be changed to 'b - a'
+		// '-a - C'		will be changed to '-C - a', C is an immediate value, any immediate value is considered to be NOT negative
+		// '-a * -b'	will be changed to 'a * b'
+		// '-a * C'		will be changed to a * -C', C is an immediate value, any immediate value is considered to be NOT negative
+		// 'C * -b'		will be changed to -C * b', C is an immediate value, any immediate value is considered to be NOT negative
+		// '-a / -b'	will be changed to 'a / b'
+		// '-a / C'		will be changed to 'a / -C', C is an immediate value, any immediate value is considered to be NOT negative
+		// 'C / -b'		will be changed to '-C / b', C is an immediate value, any immediate value is considered to be NOT negative
+		switch (op)
+		{
+		case '-':
+			return dexp_l->is_negative();
+			break;
+		case '*':
+		case '/':
+			return dexp_l->is_negative() || dexp_r->is_negative();
+			break;
+		default:
+			return false;
+			break;
+		}
+	}
 	virtual int get_depth() const {return 1 + std::max(dexp_l->get_depth(), dexp_r->get_depth());}
 	virtual char get_operator() const {return op;}
 	virtual std::shared_ptr<data_exp<T>> get_1st_data() const {return dexp_l;}
@@ -235,15 +263,15 @@ public:
 		case '-':
 			if (dexp_l->is_immediate() && 0 == dexp_l->get_immediate_value())
 				return dexp_r->to_negative();
-			else if (dexp_r->is_immediate() && 0 == dexp_r->get_immediate_value())
-				return dexp_l;
-			else if (dexp_r->is_negative())
+			else if (dexp_r->is_immediate())
 			{
-				if (dexp_l->is_negative())
+				if (0 == dexp_r->get_immediate_value())
+					return dexp_l;
+				else if (dexp_l->is_negative())
 					return merge_data_exp<T, O>(dexp_r->to_negative(), dexp_l->to_negative(), '-');
-				else
-					return merge_data_exp<T, O>(dexp_l, dexp_r->to_negative(), '+');
 			}
+			else if (dexp_r->is_negative())
+				return merge_data_exp<T, O>(dexp_l, dexp_r->to_negative(), '+');
 			break;
 		case '*':
 			if (dexp_l->is_immediate())
@@ -264,7 +292,8 @@ public:
 				else if (-1 == dexp_r->get_immediate_value())
 					return dexp_l->to_negative();
 			}
-			if (dexp_l->is_negative() && dexp_r->is_negative())
+			if ((dexp_l->is_negative() && (dexp_r->is_negative() || dexp_r->has_2_level_immediate())) ||
+				(dexp_r->is_negative() && (dexp_l->is_negative() || dexp_l->has_2_level_immediate())))
 				return merge_data_exp<T, O>(dexp_l->to_negative(), dexp_r->to_negative(), '*');
 			break;
 		case '/':
@@ -282,7 +311,8 @@ public:
 				else if (-1 == dexp_r->get_immediate_value())
 					return dexp_l->to_negative();
 			}
-			if (dexp_l->is_negative() && dexp_r->is_negative())
+			if ((dexp_l->is_negative() && (dexp_r->is_negative() || dexp_r->has_2_level_immediate())) ||
+				(dexp_r->is_negative() && (dexp_l->is_negative() || dexp_l->has_2_level_immediate())))
 				return merge_data_exp<T, O>(dexp_l->to_negative(), dexp_r->to_negative(), '/');
 			else if (O::level() < 3 && is_same_composite_variable<T>(dexp_l, dexp_r))
 			{
@@ -412,6 +442,13 @@ public:
 
 	virtual T operator()(const std::function<T(const std::string&)>& cb) const
 	{
+#ifdef _MSC_VER
+		auto v = (*binary_data_exp<T, O>::get_2nd_data())(cb);
+		if (0 == v)
+			throw("divide zero");
+
+		return (*binary_data_exp<T, O>::get_1st_data())(cb) / v;
+#endif
 		//keep the order of data fetching for debuging
 		auto dividend = (*binary_data_exp<T, O>::get_1st_data())(cb), divisor = (*binary_data_exp<T, O>::get_2nd_data())(cb);
 		if (0 == divisor)
@@ -556,7 +593,7 @@ public:
 		: variable_name(_variable_name), multiplier(_multiplier), exponent(_exponent) {}
 
 	virtual bool is_composite_variable() const {return true;}
-	virtual bool is_negative() const {return multiplier < 0;}
+	virtual bool has_2_level_immediate() const {return true;}
 	virtual int get_exponent() const {return exponent;}
 	virtual T get_multiplier() const {return multiplier;}
 	virtual const std::string& get_variable_name() const {return variable_name;}
@@ -687,13 +724,6 @@ template <typename T, typename O> inline std::shared_ptr<data_exp<T>> merge_data
 	{
 		auto data = dexp_l->trim_myself();
 		return data ? data : dexp_l;
-	}
-	else if (dexp_r->is_negative())
-	{
-		if (is_operator_1(op))
-			return merge_data_exp<T, O>(dexp_l, dexp_r->to_negative(), '+' == op ? '-' : '+');
-		else if (dexp_l->is_negative())
-			return merge_data_exp<T, O>(dexp_l->to_negative(), dexp_r->to_negative(), op);
 	}
 	else if (dexp_r->is_composite())
 	{

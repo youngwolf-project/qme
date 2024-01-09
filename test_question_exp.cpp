@@ -109,6 +109,11 @@ int main(int argc, const char* argv[])
 		{"a ? b * 2 * a * c * 10 * b * a : 0", 2.2e6f, -2.2e6f}, //convert to 20 * b^2 * a^2 * c
 		{"a ? b * 2 * a / c * 10 * b * a : 0", 18181.818f, -18181.818f}, //convert to 20 * b^2 * a^2 / c
 
+		//test elimination of negation operation
+		{"a ? -a / 2 : 0", 50.f, -50.f}, //convert to a / -2
+		{"a ? 2 * a / -b : 0", 200.f, 200.f}, //convert to -2 * a / b
+		{"a ? -a * (-b - c) : 0", -1200.f, -1200.f}, //convert to a * (b + c)
+
 		//normal test
 		{"a > 0 ? (b < 0 ? b : -b) + 1 >= 0 ? c : -c : c > 0 ? -c : c", -11.f, -11.f},
 		{"(a + b > 0 && b > 0 || c > 0) ? ((a > 0 && b > 0) ? +a + b + 1 : - c + 1 + 2) : ((a < 0 || b < 0) ? a - b : c)", -8.f, 101.f},
