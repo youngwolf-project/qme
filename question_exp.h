@@ -555,7 +555,7 @@ template <typename T> class exponent_data_exp : public data_exp<T>
 public:
 	exponent_data_exp(const std::string& _variable_name, int _exponent) : variable_name(_variable_name), exponent(_exponent) {}
 
-	virtual void show_immediate_value() const {{std::cout << ' ' << exponent;}}
+	virtual void show_immediate_value() const {std::cout << ' ' << exponent;}
 
 	virtual std::shared_ptr<data_exp<T>> to_negative() const
 		{return std::make_shared<negative_exponent_data_exp<T>>(variable_name, exponent);}
@@ -690,17 +690,20 @@ public:
 		std::shared_ptr<data_exp<T>> data = std::make_shared<immediate_data_exp<T>>(multiplier);
 		if (0 == multiplier || 0 == exponent)
 			return data;
+		else if (1 == multiplier)
+		{
+			if (1 == exponent)
+				return std::make_shared<variable_data_exp<T>>(variable_name);
+			return std::make_shared<exponent_data_exp<T>>(variable_name, exponent);
+		}
 		else if (1 == exponent)
-			data = std::make_shared<multi_data_exp<T, O>>(data, std::make_shared<variable_data_exp<T>>(variable_name));
+			return std::make_shared<multi_data_exp<T, O>>(data, std::make_shared<variable_data_exp<T>>(variable_name));
 		else if (-1 == exponent)
-			data = std::make_shared<div_data_exp<T, O>>(data, std::make_shared<variable_data_exp<T>>(variable_name));
+			return std::make_shared<div_data_exp<T, O>>(data, std::make_shared<variable_data_exp<T>>(variable_name));
 		else if (exponent > 1)
-			data = std::make_shared<multi_data_exp<T, O>>(data, std::make_shared<exponent_data_exp<T>>(variable_name, exponent));
+			return std::make_shared<multi_data_exp<T, O>>(data, std::make_shared<exponent_data_exp<T>>(variable_name, exponent));
 		else // < -1
-			data = std::make_shared<div_data_exp<T, O>>(data, std::make_shared<exponent_data_exp<T>>(variable_name, -exponent));
-
-		auto re = data->trim_myself();
-		return re ? re : data;
+			return std::make_shared<div_data_exp<T, O>>(data, std::make_shared<exponent_data_exp<T>>(variable_name, -exponent));
 	}
 
 	virtual std::shared_ptr<data_exp<T>> to_negative() const
