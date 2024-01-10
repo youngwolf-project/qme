@@ -377,6 +377,9 @@ public:
 			}
 			break;
 		case '-':
+			//without this branch, '-a - b' will be converted to 'b + a' (from b - -a) instead of 'a + b', the former looks strange
+			if (dexp_l->is_negative())
+				return merge_data_exp<T, O>(dexp_l->to_negative(), dexp_r, '+');
 			return merge_data_exp<T, O>(dexp_r, dexp_l, '-');
 			break;
 		case '*':
