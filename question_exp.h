@@ -27,10 +27,10 @@ class O0 {public: static int level() {return 0;}};
 class O1 {public: static int level() {return 1;}};
 
 //don't exchange the data orders between multiply and divide operations, for example:
-// '2 * a / 3' will not be changed to '(2 / 3) * a', because the latter will always be zero for integer (1 ~ 8 bytes)
-// 'a * 2 / 3' will not be changed to 'a * (2 / 3)', because the latter will always be zero for integer (1 ~ 8 bytes)
-// 'a / 2 * 3' will not be changed to '(3 / 2) * a'
-// '2 / a * 3' will not be changed to '(2 * 3) / a'
+// '2 * a / 3' will not be transformed to '(2 / 3) * a', because the latter will always be zero for integer (1 ~ 8 bytes)
+// 'a * 2 / 3' will not be transformed to 'a * (2 / 3)', because the latter will always be zero for integer (1 ~ 8 bytes)
+// 'a / 2 * 3' will not be transformed to '(3 / 2) * a'
+// '2 / a * 3' will not be transformed to '(2 * 3) / a'
 class O2 {public: static int level() {return 2;}};
 
 //full optimization
@@ -157,16 +157,16 @@ public:
 	{
 		//'-a - b', '-a * b', 'a * -b', '-a / b' and 'a / -b' are considered to be negative
 		//following expressions are impossible, see trim_myself for more details
-		// '-a + -b'	will be changed to '-a - b'
-		// '-a + b'		will be changed to 'b - a'
-		// '-a - -b'	will be changed to 'b - a'
-		// '-a - C'		will be changed to '-C - a', C is an immediate value, any immediate value is considered to be NOT negative
-		// '-a * -b'	will be changed to 'a * b'
-		// '-a * C'		will be changed to a * -C', C is an immediate value, any immediate value is considered to be NOT negative
-		// 'C * -b'		will be changed to -C * b', C is an immediate value, any immediate value is considered to be NOT negative
-		// '-a / -b'	will be changed to 'a / b'
-		// '-a / C'		will be changed to 'a / -C', C is an immediate value, any immediate value is considered to be NOT negative
-		// 'C / -b'		will be changed to '-C / b', C is an immediate value, any immediate value is considered to be NOT negative
+		// '-a + -b'	will be transformed to '-a - b'
+		// '-a + b'		will be transformed to 'b - a'
+		// '-a - -b'	will be transformed to 'b - a'
+		// '-a - C'		will be transformed to '-C - a', C is an immediate value, any immediate value is considered to be NOT negative
+		// '-a * -b'	will be transformed to 'a * b'
+		// '-a * C'		will be transformed to a * -C', C is an immediate value, any immediate value is considered to be NOT negative
+		// 'C * -b'		will be transformed to -C * b', C is an immediate value, any immediate value is considered to be NOT negative
+		// '-a / -b'	will be transformed to 'a / b'
+		// '-a / C'		will be transformed to 'a / -C', C is an immediate value, any immediate value is considered to be NOT negative
+		// 'C / -b'		will be transformed to '-C / b', C is an immediate value, any immediate value is considered to be NOT negative
 		switch (op)
 		{
 		case '-':
@@ -442,19 +442,17 @@ public:
 
 	virtual T operator()(const std::function<T(const std::string&)>& cb) const
 	{
-#ifdef _MSC_VER
-		auto v = (*binary_data_exp<T, O>::get_2nd_data())(cb);
-		if (0 == v)
-			throw("divide zero");
-
-		return (*binary_data_exp<T, O>::get_1st_data())(cb) / v;
+#ifndef _MSC_VER //keep the order of data fetching for debuging
+		auto dividend = (*binary_data_exp<T, O>::get_1st_data())(cb);
 #endif
-		//keep the order of data fetching for debuging
-		auto dividend = (*binary_data_exp<T, O>::get_1st_data())(cb), divisor = (*binary_data_exp<T, O>::get_2nd_data())(cb);
+		auto divisor = (*binary_data_exp<T, O>::get_2nd_data())(cb);
 		if (0 == divisor)
 			throw("divide zero");
-
+#ifdef _MSC_VER
+		return (*binary_data_exp<T, O>::get_1st_data())(cb) / divisor;
+#else
 		return dividend / divisor;
+#endif
 	}
 };
 
@@ -683,19 +681,17 @@ public:
 
 	virtual std::shared_ptr<data_exp<T>> final_optimize()
 	{
-		std::shared_ptr<data_exp<T>> data;
-
-		auto data_1 = std::make_shared<immediate_data_exp<T>>(multiplier);
+		std::shared_ptr<data_exp<T>> data = std::make_shared<immediate_data_exp<T>>(multiplier);
 		if (0 == multiplier || 0 == exponent)
-			data = data_1;
+			return data;
 		else if (1 == exponent)
-			data = std::make_shared<multi_data_exp<T, O>>(data_1, std::make_shared<variable_data_exp<T>>(variable_name));
+			data = std::make_shared<multi_data_exp<T, O>>(data, std::make_shared<variable_data_exp<T>>(variable_name));
 		else if (-1 == exponent)
-			data = std::make_shared<div_data_exp<T, O>>(data_1, std::make_shared<variable_data_exp<T>>(variable_name));
+			data = std::make_shared<div_data_exp<T, O>>(data, std::make_shared<variable_data_exp<T>>(variable_name));
 		else if (exponent > 1)
-			data = std::make_shared<multi_data_exp<T, O>>(data_1, std::make_shared<exponent_data_exp<T>>(variable_name, exponent));
+			data = std::make_shared<multi_data_exp<T, O>>(data, std::make_shared<exponent_data_exp<T>>(variable_name, exponent));
 		else // < -1
-			data = std::make_shared<div_data_exp<T, O>>(data_1, std::make_shared<exponent_data_exp<T>>(variable_name, -exponent));
+			data = std::make_shared<div_data_exp<T, O>>(data, std::make_shared<exponent_data_exp<T>>(variable_name, -exponent));
 
 		auto re = data->trim_myself();
 		return re ? re : data;
@@ -778,8 +774,8 @@ template <typename T, typename O> inline std::shared_ptr<data_exp<T>> merge_data
 		break;
 	}
 
-	auto trimed_data = data->trim_myself();
-	return trimed_data ? trimed_data : data;
+	auto re = data->trim_myself();
+	return re ? re : data;
 }
 template <typename T, typename O> inline std::shared_ptr<data_exp<T>> merge_data_exp(
 	const std::shared_ptr<data_exp<T>>& dexp_l, const std::shared_ptr<data_exp<T>>& dexp_r, const std::string& op)

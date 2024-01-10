@@ -89,30 +89,30 @@ int main(int argc, const char* argv[])
 		{"a ? 20 - (a > 0 ? a : 10) : 0", 10.f, -80.f}, //immediate values: 20, 0 (from the judgement of the sub qme), 10, 0
 		{"a ? (a > 0 ? a : 10) - 20 : 0", -10.f, 80.f}, //immediate values: 0 (from the judgement of the sub qme), 10, 20, 0
 		{"a ? -20 + -(a > 0 ? a : 10) : 0", -30.f, -120.f}, //immediate values: -20, 0 (from the judgement of the sub qme), 10, 0
-		{"a ? -(a > 0 ? a : 10) - 20 : 0", -30.f, -120.f}, //immediate values: 0 (from the judgement of the sub qme), 10, 20, 0
+		{"a ? -(a > 0 ? a : 10) - 20 : 0", -30.f, -120.f}, //immediate values: -20, 0 (from the judgement of the sub qme), 10, 0
 		{"a ? -(a > 0 ? a : 10) + 20 : 0", 10.f, -80.f}, //immediate values: 20, 0 (from the judgement of the sub qme), 10, 0
 
 		//test merging of same variables -- use multiplier or exponent (O3)
 		//for O2, immediate values can be different, please note
-		{"a ? a + a + b + b : 0", -198.f, 198.f}, //convert to 2 * a + 2 * b
-		{"a ? a + b + a + b : 0", -198.f, 198.f}, //convert to 2 * a + 2 * b
-		{"a ? 2 * a + a + a : 0", -400.f, 400.f}, //convert to 4 * a
-		{"a ? a + a + 2 * a : 0", -400.f, 400.f}, //convert to 4 * a
-		{"a ? a + a + a * 2 : 0", -400.f, 400.f}, //convert to 4 * a
-		{"a + a ? -a - a : 0", 200.f, -200.f}, //convert to 2 * a (judgement part) and -2 * a
-		{"a * a * a ? a * b * a * b : 0", 10000.f, 10000.f}, //convert to a^3 (judgement part) and a^2 * b^2
-		{"a ? 100 / a / a : 0", .01f, .01f}, //convert to 100 / (a^2)
-		{"a ? a / a / a / a : 0", .0001f, .0001f}, //convert to 1 / a^2
-		{"a ? a - (a + a) : 0", 100.f, -100.f}, //convert to -a
-		{"a ? 2 * a * a * a / (3 * a * a) : 0", -66.666672f, 66.666672f}, //convert to 0.666667 * a
-		{"a ? 2 * a * a / (3 * a * a * a) : 0", -0.006666667f, 0.006666667f}, //convert to 0.666667 / a
-		{"a ? b * 2 * a * c * 10 * b * a : 0", 2.2e6f, -2.2e6f}, //convert to 20 * b^2 * a^2 * c
-		{"a ? b * 2 * a / c * 10 * b * a : 0", 18181.818f, -18181.818f}, //convert to 20 * b^2 * a^2 / c
+		{"a ? a + a + b + b : 0", -198.f, 198.f}, //transform to 2 * a + 2 * b
+		{"a ? a + b + a + b : 0", -198.f, 198.f}, //transform to 2 * a + 2 * b
+		{"a ? 2 * a + a + a : 0", -400.f, 400.f}, //transform to 4 * a
+		{"a ? a + a + 2 * a : 0", -400.f, 400.f}, //transform to 4 * a
+		{"a ? a + a + a * 2 : 0", -400.f, 400.f}, //transform to 4 * a
+		{"a + a ? -a - a : 0", 200.f, -200.f}, //transform to 2 * a (judgement part) and -2 * a
+		{"a * a * a ? a * b * a * b : 0", 10000.f, 10000.f}, //transform to a^3 (judgement part) and a^2 * b^2
+		{"a ? 100 / a / a : 0", .01f, .01f}, //transform to 100 / (a^2)
+		{"a ? a / a / a / a : 0", .0001f, .0001f}, //transform to 1 / a^2
+		{"a ? a - (a + a) : 0", 100.f, -100.f}, //transform to -a
+		{"a ? 2 * a * a * a / (3 * a * a) : 0", -66.666672f, 66.666672f}, //transform to 0.666667 * a
+		{"a ? 2 * a * a / (3 * a * a * a) : 0", -0.006666667f, 0.006666667f}, //transform to 0.666667 / a
+		{"a ? b * 2 * a * c * 10 * b * a : 0", 2.2e6f, -2.2e6f}, //transform to 20 * b^2 * a^2 * c
+		{"a ? b * 2 * a / c * 10 * b * a : 0", 18181.818f, -18181.818f}, //transform to 20 * b^2 * a^2 / c
 
 		//test elimination of negation operation
-		{"a ? -a / 2 : 0", 50.f, -50.f}, //convert to a / -2
-		{"a ? 2 * a / -b : 0", 200.f, 200.f}, //convert to -2 * a / b
-		{"a ? -a * (-b - c) : 0", -1200.f, -1200.f}, //convert to a * (b + c)
+		{"a ? -a / 2 : 0", 50.f, -50.f}, //transform to a / -2
+		{"a ? 2 * a / -b : 0", 200.f, 200.f}, //transform to -2 * a / b
+		{"a ? -a * (-b - c) : 0", -1200.f, -1200.f}, //transform to a * (b + c)
 
 		//normal test
 		{"a > 0 ? (b < 0 ? b : -b) + 1 >= 0 ? c : -c : c > 0 ? -c : c", -11.f, -11.f},
