@@ -113,6 +113,7 @@ int main(int argc, const char* argv[])
 		{"a ? -a / 2 : 0", 50.f, -50.f}, //transform to a / -2
 		{"a ? 2 * a / -b : 0", 200.f, 200.f}, //transform to -2 * a / b
 		{"a ? -a * (-b - c) : 0", -1200.f, -1200.f}, //transform to a * (b + c)
+		{"a ? -a - 2 * b : 0", 98.f, -98.f}, //transform to -2 * b - a
 
 		//normal test
 		{"a > 0 ? (b < 0 ? b : -b) + 1 >= 0 ? c : -c : c > 0 ? -c : c", -11.f, -11.f},

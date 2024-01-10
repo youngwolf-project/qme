@@ -96,8 +96,11 @@ public:
 	virtual bool is_immediate() const {return false;}
 	virtual bool is_composite() const {return false;}
 	virtual bool is_composite_variable() const {return false;}
-	virtual bool has_2_level_immediate() const {return false;} //immediate value in * or / expression
-	virtual bool is_negative() const {return false;}
+	//whether this expression can be transformed to negative
+	// 1 - without introducing negation operations, for example 2 * a to -2 *a
+	// 2 - with reducing existed negation operations, for example -a to a
+	virtual bool has_2_level_immediate() const {return false;}
+	virtual bool is_negative() const {return false;} //needs negation operation at runtime
 	virtual int get_depth() const {return 1;}
 	virtual int get_exponent() const {throw("unsupported get exponent operation!");}
 	virtual T get_multiplier() const {throw("unsupported get multiplier operation!");}
@@ -149,24 +152,25 @@ public:
 	binary_data_exp(const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r, char _op) :
 		op(_op), dexp_l(_dexp_l), dexp_r(_dexp_r) {}
 
-	virtual bool has_2_level_immediate() const
-		{return is_operator_2(op) && (dexp_l->has_2_level_immediate() || dexp_r->has_2_level_immediate());}
-
 	virtual bool is_composite() const {return true;}
+	virtual bool has_2_level_immediate() const
+		{return is_negative() || (is_operator_2(op) && (dexp_l->has_2_level_immediate() || dexp_r->has_2_level_immediate()));}
 	virtual bool is_negative() const
 	{
-		//'-a - b', '-a * b', 'a * -b', '-a / b' and 'a / -b' are considered to be negative
-		//following expressions are impossible, see trim_myself for more details
+		//'-a - b', '-a * b', 'a * -b', '-a / b' and 'a / -b' are considered to be negative,
+		// introduce negative property to binary_data_exp is to eliminate negation operations if possible.
+		//following expressions are impossible, see trim_myself for more details:
+		//any immediate value is considered to be NOT negative since it needs no negation operation at runtime, please note.
 		// '-a + -b'	will be transformed to '-a - b'
-		// '-a + b'		will be transformed to 'b - a'
+		// '-a + b '	will be transformed to 'b - a'
 		// '-a - -b'	will be transformed to 'b - a'
-		// '-a - C'		will be transformed to '-C - a', C is an immediate value, any immediate value is considered to be NOT negative
+		// '-a - C '	will be transformed to '-C - a'
 		// '-a * -b'	will be transformed to 'a * b'
-		// '-a * C'		will be transformed to a * -C', C is an immediate value, any immediate value is considered to be NOT negative
-		// 'C * -b'		will be transformed to -C * b', C is an immediate value, any immediate value is considered to be NOT negative
+		// '-a * C '	will be transformed to 'a * -C'
+		// 'C * -b '	will be transformed to '-C * b'
 		// '-a / -b'	will be transformed to 'a / b'
-		// '-a / C'		will be transformed to 'a / -C', C is an immediate value, any immediate value is considered to be NOT negative
-		// 'C / -b'		will be transformed to '-C / b', C is an immediate value, any immediate value is considered to be NOT negative
+		// '-a / C '	will be transformed to 'a / -C'
+		// 'C / -b '	will be transformed to '-C / b'
 		switch (op)
 		{
 		case '-':
@@ -263,15 +267,12 @@ public:
 		case '-':
 			if (dexp_l->is_immediate() && 0 == dexp_l->get_immediate_value())
 				return dexp_r->to_negative();
-			else if (dexp_r->is_immediate())
-			{
-				if (0 == dexp_r->get_immediate_value())
-					return dexp_l;
-				else if (dexp_l->is_negative())
-					return merge_data_exp<T, O>(dexp_r->to_negative(), dexp_l->to_negative(), '-');
-			}
+			else if (dexp_r->is_immediate() && 0 == dexp_r->get_immediate_value())
+				return dexp_l;
 			else if (dexp_r->is_negative())
 				return merge_data_exp<T, O>(dexp_l, dexp_r->to_negative(), '+');
+			else if (dexp_l->is_negative() && dexp_r->has_2_level_immediate())
+				return merge_data_exp<T, O>(dexp_r->to_negative(), dexp_l->to_negative(), '-');
 			break;
 		case '*':
 			if (dexp_l->is_immediate())
@@ -538,6 +539,7 @@ template <typename T> class negative_data_exp : public variable_data_exp<T>
 public:
 	negative_data_exp(const std::string& _variable_name) : variable_data_exp<T>(_variable_name) {}
 
+	virtual bool has_2_level_immediate() const {return true;}
 	virtual bool is_negative() const {return true;}
 	virtual std::shared_ptr<data_exp<T>> to_negative() const {return variable_data_exp<T>::clone();}
 
@@ -578,6 +580,7 @@ template <typename T> class negative_exponent_data_exp : public exponent_data_ex
 public:
 	negative_exponent_data_exp(const std::string& _variable_name, int _exponent) : exponent_data_exp<T>(_variable_name, _exponent) {}
 
+	virtual bool has_2_level_immediate() const {return true;}
 	virtual bool is_negative() const {return true;}
 	virtual std::shared_ptr<data_exp<T>> to_negative() const {return exponent_data_exp<T>::clone();}
 
@@ -1013,6 +1016,7 @@ public:
 		const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r) :
 		question_exp<T>(_jexp, _dexp_l, _dexp_r) {}
 
+	virtual bool has_2_level_immediate() const {return true;}
 	virtual bool is_negative() const {return true;}
 	virtual std::shared_ptr<data_exp<T>> to_negative() const {return question_exp<T>::clone();}
 
