@@ -74,14 +74,14 @@ int main(int argc, const char* argv[])
 		{"a ? 2 + -(b + 2) : 0", -1.f, 1.f}, //immediate values: 0
 		{"a ? 2 - (b + 2) + 10 : 0", 9.f, 11.f}, //immediate values: 10, 0
 		{"a ? 2 - (b - 2) : 0", 3.f, 5.f}, //immediate values: 4, 0
-		{"a ? 3 / (b * 3) : 0", 1.f, -1.f}, //immediate values: 1, 0
+		{"a ? 3 / (b * 3) : 0", 1.f, -1.f}, //immediate values: -1, 0
 		{"a ? 3 / (b / 3) : 0", 9.f, -9.f}, //immediate values: 9, 0
 		{"a ? -(b + 2) + 2 : 0", -1.f, 1.f}, //immediate values: 0
 		{"a ? b * 2 * -2 : 0", -4.f, 4.f}, //immediate values: -4, 0
 		{"a ? b * 2 / -2 : 0", -1.f, 1.f}, //immediate values: 0
 		{"a ? -(a * 10 + b) : 0", 999.f, -999.f}, //immediate values: -10, 0
 		{"a ? -(a / 10 - b) : 0", 11.f, -11.f}, //immediate values: 0.1, 0
-		{"a ? 1 / a : 0", -.01f, .01f}, //immediate values: 1, 0
+		{"a ? 1 / a : 0", -.01f, .01f}, //immediate values: -1, 0
 
 		//sub question expressions' immediate values will not be merged into superiors'
 		{"a ? 20 + (a > 0 ? a : 10) : 0", 30.f, 120.f}, //immediate values: 20, 0 (from the judgement of the sub qme), 10, 0
@@ -102,7 +102,7 @@ int main(int argc, const char* argv[])
 		{"a + a ? -a - a : 0", 200.f, -200.f}, //transform to 2 * a (judgement part) and -2 * a
 		{"a * a * a ? a * b * a * b : 0", 10000.f, 10000.f}, //transform to a^3 (judgement part) and a^2 * b^2
 		{"a ? 100 / a / a : 0", .01f, .01f}, //transform to 100 / (a^2)
-		{"a ? a / a / a / a : 0", .0001f, .0001f}, //transform to 1 / a^2
+		{"a ? a / a / a / a : 0", .0001f, .0001f}, //transform to a^-2
 		{"a ? a - (a + a) : 0", 100.f, -100.f}, //transform to -a
 		{"a ? 2 * a * a * a / (3 * a * a) : 0", -66.666672f, 66.666672f}, //transform to 0.666667 * a
 		{"a ? 2 * a * a / (3 * a * a * a) : 0", -0.006666667f, 0.006666667f}, //transform to 0.666667 / a
@@ -110,7 +110,7 @@ int main(int argc, const char* argv[])
 		{"a ? b * 2 * a / c * 10 * b * a : 0", 18181.818f, -18181.818f}, //transform to 20 * b^2 * a^2 / c
 
 		//test elimination of negation operation
-		{"a ? -a / 2 : 0", 50.f, -50.f}, //transform to a / -2
+		{"a ? -a / 2 : 0", 50.f, -50.f}, //transform to -0.5 * a
 		{"a ? 2 * a / -b : 0", 200.f, 200.f}, //transform to -2 * a / b
 		{"a ? -a * (-b - c) : 0", -1200.f, -1200.f}, //transform to a * (b + c)
 		{"a ? -a - 2 * b : 0", 98.f, -98.f}, //transform to -2 * b - a
@@ -216,7 +216,18 @@ int main(int argc, const char* argv[])
 		//typedef qme::O2 O; //for float, any optimization level is OK
 		typedef qme::O3 O; //for float (default), the default and suggested optimization level is 3
 #endif
-		auto exp = qme::question_exp_parser<D, O>::parse(inputs[i].input);
+		auto exp = qme::compiler<D, O>::compile<qme::data_exp>(inputs[i].input); //compile as a data expression
+		/*
+		auto judge = qme::compiler<D, O>::compile<qme::judge_exp>(inputs[i].input); //compile as a judgement expression
+		auto raw_exp = qme::compiler<D, O>::compile(inputs[i].input); //if you don't know the type of the expression
+		if (raw_exp)
+		{
+			if (raw_exp->is_data())
+				std::dynamic_pointer_cast<qme::data_exp<D>>(raw_exp);
+			else //if (raw_exp->is_judge());
+				std::dynamic_pointer_cast<qme::judge_exp<D>>(raw_exp);
+		}
+		*/
 		printf("spent %f seconds.\n", timer.elapsed());
 		if (exp)
 		{

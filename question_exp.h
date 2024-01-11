@@ -690,20 +690,21 @@ public:
 		std::shared_ptr<data_exp<T>> data = std::make_shared<immediate_data_exp<T>>(multiplier);
 		if (0 == multiplier || 0 == exponent)
 			return data;
-		else if (1 == multiplier)
-		{
-			if (1 == exponent)
-				return std::make_shared<variable_data_exp<T>>(variable_name);
+		else if (1 == multiplier && exponent < 0)
 			return std::make_shared<exponent_data_exp<T>>(variable_name, exponent);
-		}
+		else if (-1 == multiplier && exponent < 0)
+			return std::make_shared<negative_exponent_data_exp<T>>(variable_name, exponent);
 		else if (1 == exponent)
-			return std::make_shared<multi_data_exp<T, O>>(data, std::make_shared<variable_data_exp<T>>(variable_name));
+			data = std::make_shared<multi_data_exp<T, O>>(data, std::make_shared<variable_data_exp<T>>(variable_name));
 		else if (-1 == exponent)
-			return std::make_shared<div_data_exp<T, O>>(data, std::make_shared<variable_data_exp<T>>(variable_name));
+			data = std::make_shared<div_data_exp<T, O>>(data, std::make_shared<variable_data_exp<T>>(variable_name));
 		else if (exponent > 1)
-			return std::make_shared<multi_data_exp<T, O>>(data, std::make_shared<exponent_data_exp<T>>(variable_name, exponent));
+			data = std::make_shared<multi_data_exp<T, O>>(data, std::make_shared<exponent_data_exp<T>>(variable_name, exponent));
 		else // < -1
-			return std::make_shared<div_data_exp<T, O>>(data, std::make_shared<exponent_data_exp<T>>(variable_name, -exponent));
+			data = std::make_shared<div_data_exp<T, O>>(data, std::make_shared<exponent_data_exp<T>>(variable_name, -exponent));
+
+		auto re = data->trim_myself();
+		return re ? re : data;
 	}
 
 	virtual std::shared_ptr<data_exp<T>> to_negative() const
@@ -797,71 +798,69 @@ template <typename T> class judge_exp : public exp
 {
 public:
 	virtual bool is_judge() const {return true;}
+	virtual int get_depth() const {return 1;}
 	virtual void show_immediate_value() const = 0;
+	virtual std::shared_ptr<judge_exp<T>> final_optimize() = 0;
 
 	virtual bool operator()(const std::function<T(const std::string&)>&) const = 0;
 };
 
-template <typename T> class not_judge_exp : public judge_exp<T>
+template <typename T> class unitary_judge_exp : public judge_exp<T>
 {
 public:
-	not_judge_exp(const std::shared_ptr<judge_exp<T>>& _jexp) : jexp(_jexp) {}
+	unitary_judge_exp(const std::shared_ptr<data_exp<T>>& _dexp) : dexp(_dexp) {}
 
-	virtual void show_immediate_value() const {jexp->show_immediate_value();}
-
-	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return !(*jexp)(cb);}
-
-private:
-	std::shared_ptr<judge_exp<T>> jexp;
-};
-
-template <typename T> class equal_0_judge_exp : public judge_exp<T>
-{
-public:
-	equal_0_judge_exp(const std::shared_ptr<data_exp<T>>& _dexp)
+	virtual int get_depth() const {return 1 + dexp->get_depth();}
+	virtual void show_immediate_value() const {dexp->show_immediate_value();}
+	virtual std::shared_ptr<judge_exp<T>> final_optimize()
 	{
-		auto data = _dexp->final_optimize();
-		dexp = data ? data : _dexp;
+		auto data = dexp->final_optimize();
+		if (data)
+			dexp = data;
+
+		return std::shared_ptr<judge_exp<T>>();
 	}
 
-	virtual void show_immediate_value() const {dexp->show_immediate_value();}
-
-	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return 0 == (*dexp)(cb);}
-
-private:
+protected:
 	std::shared_ptr<data_exp<T>> dexp;
 };
 
-template <typename T> class not_equal_0_judge_exp : public judge_exp<T>
+template <typename T> class equal_0_judge_exp : public unitary_judge_exp<T>
 {
 public:
-	not_equal_0_judge_exp(const std::shared_ptr<data_exp<T>>& _dexp)
-	{
-		auto data = _dexp->final_optimize();
-		dexp = data ? data : _dexp;
-	}
+	equal_0_judge_exp(const std::shared_ptr<data_exp<T>>& _dexp) : unitary_judge_exp<T>(_dexp) {}
 
-	virtual void show_immediate_value() const {dexp->show_immediate_value();}
+	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return 0 == (*this->dexp)(cb);}
+};
 
-	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return 0 != (*dexp)(cb);}
+template <typename T> class not_equal_0_judge_exp : public unitary_judge_exp<T>
+{
+public:
+	not_equal_0_judge_exp(const std::shared_ptr<data_exp<T>>& _dexp) : unitary_judge_exp<T>(_dexp) {}
 
-private:
-	std::shared_ptr<data_exp<T>> dexp;
+	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return 0 != (*this->dexp)(cb);}
 };
 
 template <typename T> class binary_judge_exp : public judge_exp<T>
 {
 public:
-	binary_judge_exp(const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r)
-	{
-		auto data = _dexp_l->final_optimize();
-		dexp_l = data ? data : _dexp_l;
+	binary_judge_exp(const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r) :
+		dexp_l(_dexp_l), dexp_r(_dexp_r) {}
 
-		data = _dexp_r->final_optimize();
-		dexp_r = data ? data : _dexp_r;
-	}
-
+	virtual int get_depth() const {return 1 + std::max(dexp_l->get_depth(), dexp_r->get_depth());}
 	virtual void show_immediate_value() const {dexp_l->show_immediate_value(); dexp_r->show_immediate_value();}
+	virtual std::shared_ptr<judge_exp<T>> final_optimize()
+	{
+		auto data = dexp_l->final_optimize();
+		if (data)
+			dexp_l = data;
+
+		data = dexp_r->final_optimize();
+		if (data)
+			dexp_r = data;
+
+		return std::shared_ptr<judge_exp<T>>();
+	}
 
 protected:
 	std::shared_ptr<data_exp<T>> dexp_l, dexp_r;
@@ -940,34 +939,53 @@ template <typename T> inline std::shared_ptr<judge_exp<T>> make_binary_judge_exp
 		throw("unknown compare operator " + c);
 }
 
-template <typename T> class and_judge_exp : public judge_exp<T>
+template <typename T> class not_judge_exp : public judge_exp<T>
 {
 public:
-	and_judge_exp(const std::shared_ptr<judge_exp<T>>& _jexp_l, const std::shared_ptr<judge_exp<T>>& _jexp_r) :
-		jexp_l(_jexp_l), jexp_r(_jexp_r) {}
+	not_judge_exp(const std::shared_ptr<judge_exp<T>>& _jexp) : jexp(_jexp) {}
 
-	virtual void show_immediate_value() const {jexp_l->show_immediate_value(); jexp_r->show_immediate_value();}
+	virtual int get_depth() const {return 1 + jexp->get_depth();}
+	virtual void show_immediate_value() const {jexp->show_immediate_value();}
+	virtual std::shared_ptr<judge_exp<T>> final_optimize() {return jexp->final_optimize();}
 
-	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*jexp_l)(cb) && (*jexp_r)(cb);}
+	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return !(*jexp)(cb);}
 
 private:
+	std::shared_ptr<judge_exp<T>> jexp;
+};
+
+template <typename T> class logical_exp : public judge_exp<T>
+{
+public:
+	logical_exp(const std::shared_ptr<judge_exp<T>>& _jexp_l, const std::shared_ptr<judge_exp<T>>& _jexp_r) :
+		jexp_l(_jexp_l), jexp_r(_jexp_r) {}
+
+	virtual int get_depth() const {return 1 + std::max(jexp_l->get_depth(), jexp_l->get_depth());}
+	virtual void show_immediate_value() const {jexp_l->show_immediate_value(); jexp_r->show_immediate_value();}
+	virtual std::shared_ptr<judge_exp<T>> final_optimize()
+		{jexp_l->final_optimize(); jexp_r->final_optimize(); return std::shared_ptr<judge_exp<T>>();}
+
+protected:
 	std::shared_ptr<judge_exp<T>> jexp_l;
 	std::shared_ptr<judge_exp<T>> jexp_r;
 };
 
-template <typename T> class or_judge_exp : public judge_exp<T>
+template <typename T> class and_judge_exp : public logical_exp<T>
+{
+public:
+	and_judge_exp(const std::shared_ptr<judge_exp<T>>& _jexp_l, const std::shared_ptr<judge_exp<T>>& _jexp_r) :
+		logical_exp<T>(_jexp_l, _jexp_r) {}
+
+	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->jexp_l)(cb) && (*this->jexp_r)(cb);}
+};
+
+template <typename T> class or_judge_exp : public logical_exp<T>
 {
 public:
 	or_judge_exp(const std::shared_ptr<judge_exp<T>>& _jexp_l, const std::shared_ptr<judge_exp<T>>& _jexp_r) :
-		jexp_l(_jexp_l), jexp_r(_jexp_r) {}
+		logical_exp<T>(_jexp_l, _jexp_r) {}
 
-	virtual void show_immediate_value() const {jexp_l->show_immediate_value(); jexp_r->show_immediate_value();}
-
-	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*jexp_l)(cb) || (*jexp_r)(cb);}
-
-private:
-	std::shared_ptr<judge_exp<T>> jexp_l;
-	std::shared_ptr<judge_exp<T>> jexp_r;
+	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->jexp_l)(cb) || (*this->jexp_r)(cb);}
 };
 
 template <typename T> inline std::shared_ptr<judge_exp<T>>
@@ -988,22 +1006,27 @@ template <typename T> class question_exp : public data_exp<T>
 {
 public:
 	question_exp(const std::shared_ptr<judge_exp<T>>& _jexp,
-		const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r) : jexp(_jexp)
-	{
-		auto data = _dexp_l->final_optimize();
-		dexp_l = data ? data : _dexp_l;
+		const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r) :
+			jexp(_jexp), dexp_l(_dexp_l), dexp_r(_dexp_r) {}
 
-		data = _dexp_r->final_optimize();
-		dexp_r = data ? data : _dexp_r;
-	}
-
-	virtual int get_depth() const {return 1 + std::max(dexp_l->get_depth(), dexp_r->get_depth());}
-
+	virtual int get_depth() const {return 1 + std::max(jexp->get_depth(), std::max(dexp_l->get_depth(), dexp_r->get_depth()));}
 	virtual void show_immediate_value() const
 		{jexp->show_immediate_value(); dexp_l->show_immediate_value(); dexp_r->show_immediate_value();}
+	virtual std::shared_ptr<data_exp<T>> final_optimize()
+	{
+		jexp->final_optimize();
 
-	virtual std::shared_ptr<data_exp<T>> to_negative() const
-		{return std::make_shared<negative_question_exp<T>>(jexp, dexp_l, dexp_r);}
+		auto data = dexp_l->final_optimize();
+		if (data)
+			dexp_l = data;
+
+		data = dexp_r->final_optimize();
+		if (data)
+			dexp_r = data;
+
+		return std::shared_ptr<data_exp<T>>();
+	}
+	virtual std::shared_ptr<data_exp<T>> to_negative() const {return std::make_shared<negative_question_exp<T>>(jexp, dexp_l, dexp_r);}
 
 	virtual T operator()(const std::function<T(const std::string&)>& cb) const {return (*jexp)(cb) ? (*dexp_l)(cb) : (*dexp_r)(cb);}
 
@@ -1030,7 +1053,7 @@ public:
 };
 /////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename T = float, typename O = O3> class question_exp_parser
+template <typename T = float, typename O = O3> class compiler
 {
 private:
 	struct sub_exp
@@ -1041,8 +1064,34 @@ private:
 	};
 
 public:
-	static std::shared_ptr<data_exp<T>> parse(const char* statement) {return parse(std::string(statement));}
-	static std::shared_ptr<data_exp<T>> parse(const std::string& statement)
+	template <template<typename> class Exp = data_exp> static std::shared_ptr<Exp<T>> compile(const char* statement)
+		{return compile<Exp>(std::string(statement));}
+	template <template<typename> class Exp = data_exp> static std::shared_ptr<Exp<T>> compile(const std::string& statement)
+	{
+		auto exp = compile(statement);
+		if (!exp)
+			return std::shared_ptr<Exp<T>>();
+
+		auto re = std::dynamic_pointer_cast<Exp<T>>(exp);
+		if (!re)
+			puts("\033[31mincomplete expression!\033[0m");
+		else
+		{
+			auto final_re = re->final_optimize();
+			if (final_re)
+				re = final_re;
+#ifdef DEBUG
+			printf(" max depth: %d\n immediate values:", re->get_depth());
+			re->show_immediate_value();
+			putchar('\n');
+#endif
+		}
+
+		return re;
+	}
+
+	static std::shared_ptr<exp> compile(const char* statement) {return compile(std::string(statement));}
+	static std::shared_ptr<exp> compile(const std::string& statement)
 	{
 		try
 		{
@@ -1110,26 +1159,16 @@ public:
 					for (auto& item : sub_exps)
 					{
 						if (!item.second.parsed_exp)
-							if ((item.second.parsed_exp = parse(item.second.items, sub_exps)))
+							if ((item.second.parsed_exp = compile(item.second.items, sub_exps)))
 								++parsed_num;
 					}
 				} while (parsed_num > 0);
 			}
 
-			auto items = split(expression);
-			auto exp = parse(items, sub_exps);
-			if (!exp || !exp->is_data())
+			auto re = compile(split(expression), sub_exps);
+			if (!re)
 				throw("incomplete expression!");
 
-			auto re = std::dynamic_pointer_cast<data_exp<T>>(exp);
-			auto final_re = re->final_optimize();
-			if (final_re)
-				re = final_re;
-#ifdef DEBUG
-			printf(" max depth: %d\n immediate values:", re->get_depth());
-			re->show_immediate_value();
-			putchar('\n');
-#endif
 			return re;
 		}
 		catch (const std::exception& e) {printf("\033[31m%s\033[0m\n", e.what());}
@@ -1137,7 +1176,7 @@ public:
 		catch (const char* e) {printf("\033[31m%s\033[0m\n", e);}
 		catch (...) {puts("\033[31munknown exception happened!\033[0m");}
 
-		return std::shared_ptr<data_exp<T>>();
+		return std::shared_ptr<exp>();
 	}
 
 private:
@@ -1408,10 +1447,10 @@ private:
 			throw("missing logical operand!");
 	}
 
-	static std::shared_ptr<exp> parse(const std::vector<std::string>& items, const std::map<std::string, sub_exp>& sub_exps)
+	static std::shared_ptr<exp> compile(const std::vector<std::string>& items, const std::map<std::string, sub_exp>& sub_exps)
 	{
 		size_t index = 0, end_index = items.size();
-		try {return parse(items, sub_exps, index, end_index);}
+		try {return compile(items, sub_exps, index, end_index);}
 		catch (const std::exception& e) {on_error(items, index); throw(e);}
 		catch (const std::string& e) {on_error(items, index); throw(e);}
 		catch (const char* e) {on_error(items, index); throw(e);}
@@ -1431,7 +1470,7 @@ private:
 			return std::make_shared<immediate_data_exp<T>>((T) atoll(vov.data())); //integer
 	}
 
-	static std::shared_ptr<exp> parse(const std::vector<std::string>& items, const std::map<std::string, sub_exp>& sub_exps,
+	static std::shared_ptr<exp> compile(const std::vector<std::string>& items, const std::map<std::string, sub_exp>& sub_exps,
 		size_t& index, size_t end_index)
 	{
 		if (index >= end_index)
