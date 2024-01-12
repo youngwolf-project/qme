@@ -234,23 +234,13 @@ public:
 
 	virtual std::shared_ptr<data_exp<T>> trim_myself()
 	{
-		auto changed = false;
 		auto data = dexp_l->trim_myself();
 		if (data)
-		{
-			changed = true;
 			dexp_l = data;
-		}
 
 		data = dexp_r->trim_myself();
 		if (data)
-		{
-			changed = true;
 			dexp_r = data;
-		}
-
-		if (changed) //in case that composite_variable_data_exp turned out to be immediate_data_exp
-			return merge_data_exp<T, O>(dexp_l, dexp_r, op);
 
 		switch (op)
 		{
@@ -512,13 +502,13 @@ private:
 	T value;
 };
 
-template <typename T> class negative_data_exp;
+template <typename T> class negative_variable_data_exp;
 template <typename T> class variable_data_exp : public data_exp<T>
 {
 public:
 	variable_data_exp(const std::string& _variable_name) : variable_name(_variable_name) {}
 
-	virtual std::shared_ptr<data_exp<T>> to_negative() const {return std::make_shared<negative_data_exp<T>>(variable_name);}
+	virtual std::shared_ptr<data_exp<T>> to_negative() const {return std::make_shared<negative_variable_data_exp<T>>(variable_name);}
 
 	virtual T operator()(const std::function<T(const std::string&)>& cb) const
 	{
@@ -537,10 +527,10 @@ private:
 	std::string variable_name;
 };
 
-template <typename T> class negative_data_exp : public variable_data_exp<T>
+template <typename T> class negative_variable_data_exp : public variable_data_exp<T>
 {
 public:
-	negative_data_exp(const std::string& _variable_name) : variable_data_exp<T>(_variable_name) {}
+	negative_variable_data_exp(const std::string& _variable_name) : variable_data_exp<T>(_variable_name) {}
 
 	virtual bool has_2_level_immediate() const {return true;}
 	virtual bool is_negative() const {return true;}
