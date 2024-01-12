@@ -141,6 +141,8 @@ int main(int argc, const char* argv[])
 		{"a ? -b + 0 : 0", -1.f, 1.f},
 		{"a ? -(-(-(b))) : 0", -1.f, 1.f},
 		{"a ? -(-(-(-b))) : 0", 1.f, -1.f},
+		{"a ? -1 / a / a : 0", -.0001f, -.0001f},
+		{"a ? -(b ? b : c) : 0", -1.f, 1.f},
 
 		//following expressions are supposed to be invalid:
 		{"!a"},
