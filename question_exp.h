@@ -592,6 +592,8 @@ public:
 	virtual T get_multiplier() const {return multiplier;}
 	virtual const std::string& get_variable_name() const {return variable_name;}
 
+	virtual void show_immediate_value() const {std::cout << ' ' << multiplier << ' ' << exponent;}
+
 	virtual bool merge_with(char other_op, const std::shared_ptr<data_exp<T>>& other_exp)
 	{
 		if (other_exp->is_immediate())
@@ -680,6 +682,8 @@ public:
 		std::shared_ptr<data_exp<T>> data = std::make_shared<immediate_data_exp<T>>(multiplier);
 		if (0 == multiplier || 0 == exponent)
 			return data;
+		else if (1 != multiplier && -1 != multiplier && exponent > 1)
+			return std::shared_ptr<data_exp<T>>();
 		else if (1 == multiplier && exponent < 0)
 			return std::make_shared<exponent_data_exp<T>>(variable_name, exponent);
 		else if (-1 == multiplier && exponent < 0)
@@ -687,11 +691,11 @@ public:
 		else if (1 == exponent)
 			data = std::make_shared<multi_data_exp<T, O>>(data, std::make_shared<variable_data_exp<T>>(variable_name));
 		else if (-1 == exponent)
-			data = std::make_shared<div_data_exp<T, O>>(data, std::make_shared<variable_data_exp<T>>(variable_name));
+			return std::make_shared<div_data_exp<T, O>>(data, std::make_shared<variable_data_exp<T>>(variable_name));
 		else if (exponent > 1)
 			data = std::make_shared<multi_data_exp<T, O>>(data, std::make_shared<exponent_data_exp<T>>(variable_name, exponent));
 		else // < -1
-			data = std::make_shared<div_data_exp<T, O>>(data, std::make_shared<exponent_data_exp<T>>(variable_name, -exponent));
+			return std::make_shared<div_data_exp<T, O>>(data, std::make_shared<exponent_data_exp<T>>(variable_name, -exponent));
 
 		auto re = data->trim_myself();
 		return re ? re : data;
@@ -700,7 +704,15 @@ public:
 	virtual std::shared_ptr<data_exp<T>> to_negative() const
 		{return std::make_shared<composite_variable_data_exp<T, O>>(variable_name, -multiplier, exponent);}
 
-	virtual T operator()(const std::function<T(const std::string&)>& cb) const {throw("unsupported () operator!");}
+	virtual T operator()(const std::function<T(const std::string&)>& cb) const
+	{
+#ifdef DEBUG
+		auto v = cb(variable_name);
+		std::cout << " get " << variable_name << " returns " << v << std::endl;
+		return multiplier * (T) pow(v, exponent);
+#endif
+		return multiplier * (T) pow(cb(variable_name), exponent);
+	}
 
 private:
 	std::string variable_name;
