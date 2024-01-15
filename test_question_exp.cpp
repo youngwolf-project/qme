@@ -212,11 +212,16 @@ int main(int argc, const char* argv[])
 		timer.restart();
 #if 0
 		typedef int D;
-		typedef qme::O2 O; //for integer, do not use optimization level 3
+		//typedef qme::O0 O; //for integer (1 ~ 8 bytes), optimization level 0 is OK
+		//typedef qme::O1 O; //for integer (1 ~ 8 bytes), optimization level 1 is OK
+		typedef qme::O2 O; //for integer (1 ~ 8 bytes),  optimization level 2 is OK and suggested
+		//typedef qme::O3 O; //for integer (1 ~ 8 bytes), do not use optimization level 3
 #else
 		typedef float D;
-		//typedef qme::O2 O; //for float, any optimization level is OK
-		typedef qme::O3 O; //for float (default), the default and suggested optimization level is 3
+		//typedef qme::O0 O; //for float (4 ~ 8 bytes), any optimization level is OK
+		//typedef qme::O1 O; //for float (4 ~ 8 bytes), any optimization level is OK
+		//typedef qme::O2 O; //for float (4 ~ 8 bytes), any optimization level is OK
+		typedef qme::O3 O; //for float (4 ~ 8 bytes), the default and suggested optimization level is 3
 #endif
 		auto exp = qme::compiler<D, O>::compile<qme::data_exp>(inputs[i].input); //compile as a data expression
 		/*
