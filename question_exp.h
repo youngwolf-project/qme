@@ -1116,31 +1116,19 @@ public:
 				auto num = 0;
 				pre_parse_2(expression, sub_exps, index, end_index, num, 0);
 
-				auto base_level = 100;
-				while (true)
-				{
-					index = 0;
-					end_index = expression.size();
-					num = 0;
-					if (!pre_parse_3(expression, sub_exps, index, end_index, num, 0, base_level))
-						break;
+				auto base_level = 0;
+				for (auto first = true; first || pre_parse_3(expression, sub_exps, index, end_index, num, 0, base_level);
+					first = false, base_level += 100, index = 0, end_index = expression.size(), num = 0);
 
-					base_level += 100;
-				}
-		
 				auto tmp_exps = sub_exps;
 				for (auto& s_exp : tmp_exps)
-					while (true)
-					{
-						index = 0;
-						end_index = s_exp.second.raw_exp.size();
-						num = 0;
-						if (!pre_parse_3(s_exp.second.raw_exp, sub_exps, index, end_index, num, 0, base_level))
-							break;
-
-						base_level += 100;
-						sub_exps[s_exp.first].raw_exp = s_exp.second.raw_exp;
-					}
+				{
+					base_level -= 100;
+					for (auto first = true; first || pre_parse_3(s_exp.second.raw_exp, sub_exps, index, end_index, num, 0, base_level);
+						first = false, base_level += 100, index = 0, end_index = s_exp.second.raw_exp.size(), num = 0)
+						if (!first)
+							sub_exps[s_exp.first].raw_exp = s_exp.second.raw_exp;
+				}
 			}
 			catch (const std::exception& e) {on_error(expression, index); throw(e);}
 			catch (const std::string& e) {on_error(expression, index); throw(e);}
@@ -1164,11 +1152,8 @@ public:
 				{
 					parsed_num = 0;
 					for (auto& item : sub_exps)
-					{
-						if (!item.second.parsed_exp)
-							if ((item.second.parsed_exp = compile(item.second.items, sub_exps)))
-								++parsed_num;
-					}
+						if (!item.second.parsed_exp && (item.second.parsed_exp = compile(item.second.items, sub_exps)))
+							++parsed_num;
 				} while (parsed_num > 0);
 			}
 
@@ -1193,17 +1178,9 @@ private:
 		printf(" pre-parsing phase 1 from [%s] ", expression.data());
 #endif
 		char blanks[] = {' ', '\t', '\n', '\r'};
-		for (auto& c : blanks)
-		{
-			auto pos = std::string::npos;
-			while (true)
-			{
-				if (std::string::npos == (pos = expression.rfind(c, pos)))
-					break;
-
+		for (const auto& c : blanks)
+			for (auto pos = std::string::npos; std::string::npos != (pos = expression.rfind(c, pos));)
 				expression.erase(pos, 1);
-			}
-		}
 
 #ifdef DEBUG
 		printf("to [%s]\n", expression.data());
@@ -1219,7 +1196,7 @@ private:
 		auto p_start = std::string::npos;
 		while (index < end_index)
 		{
-			auto c = expression[index];
+			const auto c = expression[index];
 			if ('(' == c)
 			{
 				if (std::string::npos == p_start)
@@ -1278,7 +1255,7 @@ private:
 		size_t q_pos = 0, c_pos = 0, start = index;
 		while (index < end_index)
 		{
-			auto c = expression[index];
+			const auto c = expression[index];
 			if ('?' == c)
 			{
 				if (0 == q_pos)

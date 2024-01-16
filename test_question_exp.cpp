@@ -214,7 +214,7 @@ int main(int argc, const char* argv[])
 		typedef int D;
 		//typedef qme::O0 O; //for integer (1 ~ 8 bytes), optimization level 0 is OK
 		//typedef qme::O1 O; //for integer (1 ~ 8 bytes), optimization level 1 is OK
-		typedef qme::O2 O; //for integer (1 ~ 8 bytes),  optimization level 2 is OK and suggested
+		typedef qme::O2 O; //for integer (1 ~ 8 bytes), optimization level 2 is OK and suggested
 		//typedef qme::O3 O; //for integer (1 ~ 8 bytes), do not use optimization level 3
 #else
 		typedef float D;
