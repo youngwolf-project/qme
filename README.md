@@ -3,7 +3,8 @@ Question mark expression just as C/C++'s
 -
 Overview
 -
-Compile once and execute any times with different values of the variables in the question mark expression.
+Compile once and execute any times with different values of the variables in the question mark expression.</br>
+Recursion is used during the whole compilation and execution, so please carefully control the number of variables in your question mark expressions, and enlage the size of the stack if inevitable.
 
 Quick start
 -

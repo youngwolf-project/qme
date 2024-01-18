@@ -18,12 +18,10 @@
 namespace qme
 {
 
-//not supported yet
 //without any exchange between any data, nor merging of immediate values
 class O0 {public: static int level() {return 0;}};
 
 //not supported yet
-//don't exchange the data orders, but with merging of immediate values
 class O1 {public: static int level() {return 1;}};
 
 //don't exchange the data orders between multiply and divide operations, for example:
@@ -99,7 +97,7 @@ public:
 	//whether this expression can be transformed to negative
 	// 1 - without introducing negation operations, for example 2 * a to -2 *a
 	// 2 - with reducing existed negation operations, for example -a to a
-	virtual bool has_2_level_immediate() const {return false;}
+	virtual bool is_easy_to_negative() const {return false;}
 	virtual bool is_negative() const {return false;} //needs negation operation at runtime
 	virtual int get_depth() const {return 1;}
 	virtual int get_exponent() const {throw("unsupported get exponent operation!");}
@@ -153,8 +151,8 @@ public:
 		op(_op), dexp_l(_dexp_l), dexp_r(_dexp_r) {}
 
 	virtual bool is_composite() const {return true;}
-	virtual bool has_2_level_immediate() const
-		{return is_negative() || (is_operator_2(op) && (dexp_l->has_2_level_immediate() || dexp_r->has_2_level_immediate()));}
+	virtual bool is_easy_to_negative() const
+		{return is_negative() || (is_operator_2(op) && (dexp_l->is_easy_to_negative() || dexp_r->is_easy_to_negative()));}
 	virtual bool is_negative() const
 	{
 		//'-a - b', '-a * b', 'a * -b', '-a / b' and 'a / -b' are considered to be negative,
@@ -234,9 +232,6 @@ public:
 
 	virtual std::shared_ptr<data_exp<T>> trim_myself()
 	{
-		if (O::level() < 2)
-			return std::shared_ptr<data_exp<T>>();
-
 		auto data = dexp_l->trim_myself();
 		if (data)
 			dexp_l = data;
@@ -264,7 +259,7 @@ public:
 				return dexp_l;
 			else if (dexp_r->is_negative())
 				return merge_data_exp<T, O>(dexp_l, dexp_r->to_negative(), '+');
-			else if (dexp_l->is_negative() && dexp_r->has_2_level_immediate())
+			else if (dexp_l->is_negative() && dexp_r->is_easy_to_negative())
 				return merge_data_exp<T, O>(dexp_r->to_negative(), dexp_l->to_negative(), '-');
 			break;
 		case '*':
@@ -286,8 +281,8 @@ public:
 				else if (-1 == dexp_r->get_immediate_value())
 					return dexp_l->to_negative();
 			}
-			if ((dexp_l->is_negative() && (dexp_r->is_negative() || dexp_r->has_2_level_immediate())) ||
-				(dexp_r->is_negative() && (dexp_l->is_negative() || dexp_l->has_2_level_immediate())))
+			if ((dexp_l->is_negative() && (dexp_r->is_negative() || dexp_r->is_easy_to_negative())) ||
+				(dexp_r->is_negative() && (dexp_l->is_negative() || dexp_l->is_easy_to_negative())))
 				return merge_data_exp<T, O>(dexp_l->to_negative(), dexp_r->to_negative(), '*');
 			break;
 		case '/':
@@ -305,8 +300,8 @@ public:
 				else if (-1 == dexp_r->get_immediate_value())
 					return dexp_l->to_negative();
 			}
-			if ((dexp_l->is_negative() && (dexp_r->is_negative() || dexp_r->has_2_level_immediate())) ||
-				(dexp_r->is_negative() && (dexp_l->is_negative() || dexp_l->has_2_level_immediate())))
+			if ((dexp_l->is_negative() && (dexp_r->is_negative() || dexp_r->is_easy_to_negative())) ||
+				(dexp_r->is_negative() && (dexp_l->is_negative() || dexp_l->is_easy_to_negative())))
 				return merge_data_exp<T, O>(dexp_l->to_negative(), dexp_r->to_negative(), '/');
 			else if (O::level() < 3 && is_same_composite_variable<T>(dexp_l, dexp_r))
 			{
@@ -358,9 +353,9 @@ public:
 		switch (op)
 		{
 		case '+':
-			if (dexp_l->has_2_level_immediate())
+			if (dexp_l->is_easy_to_negative())
 				return merge_data_exp<T, O>(dexp_l->to_negative(), dexp_r, '-');
-			else if (dexp_r->has_2_level_immediate())
+			else if (dexp_r->is_easy_to_negative())
 				return merge_data_exp<T, O>(dexp_r->to_negative(), dexp_l, '-');
 			else
 			{
@@ -379,9 +374,9 @@ public:
 			break;
 		case '*':
 		case '/':
-			if (dexp_l->has_2_level_immediate())
+			if (dexp_l->is_easy_to_negative())
 				return merge_data_exp<T, O>(dexp_l->to_negative(), dexp_r, op);
-			else if (dexp_r->has_2_level_immediate())
+			else if (dexp_r->is_easy_to_negative())
 				return merge_data_exp<T, O>(dexp_l, dexp_r->to_negative(), op);
 			else
 			{
@@ -462,12 +457,12 @@ public:
 	immediate_data_exp(T v) : value(v) {}
 
 	virtual bool is_immediate() const {return true;}
-	virtual bool has_2_level_immediate() const {return true;}
+	virtual bool is_easy_to_negative() const {return true;}
 	virtual T get_immediate_value() const {return value;}
 
 	virtual void show_immediate_value() const {std::cout << ' ' << value;}
 	virtual bool merge_with(char other_op, const std::shared_ptr<data_exp<T>>& other_exp)
-		{return O::level() > 0 && other_exp->is_immediate() ? do_merge_with(other_op, other_exp->get_immediate_value()) : false;}
+		{return other_exp->is_immediate() ? do_merge_with(other_op, other_exp->get_immediate_value()) : false;}
 	virtual std::shared_ptr<data_exp<T>> to_negative() const {return std::make_shared<immediate_data_exp<T, O>>(-value);}
 
 	virtual T operator()(const std::function<T(const std::string&)>&) const
@@ -539,7 +534,7 @@ template <typename T> class negative_variable_data_exp : public variable_data_ex
 public:
 	negative_variable_data_exp(const std::string& _variable_name) : variable_data_exp<T>(_variable_name) {}
 
-	virtual bool has_2_level_immediate() const {return true;}
+	virtual bool is_easy_to_negative() const {return true;}
 	virtual bool is_negative() const {return true;}
 	virtual std::shared_ptr<data_exp<T>> to_negative() const {return variable_data_exp<T>::clone();}
 
@@ -580,7 +575,7 @@ template <typename T> class negative_exponent_data_exp : public exponent_data_ex
 public:
 	negative_exponent_data_exp(const std::string& _variable_name, int _exponent) : exponent_data_exp<T>(_variable_name, _exponent) {}
 
-	virtual bool has_2_level_immediate() const {return true;}
+	virtual bool is_easy_to_negative() const {return true;}
 	virtual bool is_negative() const {return true;}
 	virtual std::shared_ptr<data_exp<T>> to_negative() const {return exponent_data_exp<T>::clone();}
 
@@ -594,7 +589,7 @@ public:
 		: variable_name(_variable_name), multiplier(_multiplier), exponent(_exponent) {}
 
 	virtual bool is_composite_variable() const {return true;}
-	virtual bool has_2_level_immediate() const {return true;}
+	virtual bool is_easy_to_negative() const {return true;}
 	virtual int get_exponent() const {return exponent;}
 	virtual T get_multiplier() const {return multiplier;}
 	virtual const std::string& get_variable_name() const {return variable_name;}
@@ -727,9 +722,35 @@ private:
 	int exponent;
 };
 
+template <typename T, typename O> inline std::shared_ptr<data_exp<T>> direct_merge_data_exp(
+	const std::shared_ptr<data_exp<T>>& dexp_l, const std::shared_ptr<data_exp<T>>& dexp_r, char op)
+{
+	switch (op)
+	{
+	case '+':
+		return std::make_shared<add_data_exp<T, O>>(dexp_l, dexp_r);
+		break;
+	case '-':
+		return std::make_shared<sub_data_exp<T, O>>(dexp_l, dexp_r);
+		break;
+	case '*':
+		return std::make_shared<multi_data_exp<T, O>>(dexp_l, dexp_r);
+		break;
+	case '/':
+		return std::make_shared<div_data_exp<T, O>>(dexp_l, dexp_r);
+		break;
+	default:
+		throw("undefined operator " + std::string(1, op));
+		break;
+	}
+}
+
 template <typename T, typename O> inline std::shared_ptr<data_exp<T>> merge_data_exp(
 	const std::shared_ptr<data_exp<T>>& dexp_l, const std::shared_ptr<data_exp<T>>& dexp_r, char op)
 {
+	if (0 == O::level())
+		return direct_merge_data_exp<T, O>(dexp_l, dexp_r, op);
+
 	if (dexp_r->merge_with(dexp_l, op)) //parse 'C * Na^M' and 'C / Na^M' to composite_variable_data_exp instead of binary_data_exp
 	{
 		auto data = dexp_r->trim_myself();
@@ -773,26 +794,7 @@ template <typename T, typename O> inline std::shared_ptr<data_exp<T>> merge_data
 		}
 	}
 
-	std::shared_ptr<data_exp<T>> data;
-	switch (op)
-	{
-	case '+':
-		data = std::make_shared<add_data_exp<T, O>>(dexp_l, dexp_r);
-		break;
-	case '-':
-		data = std::make_shared<sub_data_exp<T, O>>(dexp_l, dexp_r);
-		break;
-	case '*':
-		data = std::make_shared<multi_data_exp<T, O>>(dexp_l, dexp_r);
-		break;
-	case '/':
-		data = std::make_shared<div_data_exp<T, O>>(dexp_l, dexp_r);
-		break;
-	default:
-		throw("undefined operator " + std::string(1, op));
-		break;
-	}
-
+	auto data = direct_merge_data_exp<T, O>(dexp_l, dexp_r, op);
 	auto re = data->trim_myself();
 	return re ? re : data;
 }
@@ -1061,7 +1063,7 @@ public:
 		const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r) :
 		question_exp<T>(_jexp, _dexp_l, _dexp_r) {}
 
-	virtual bool has_2_level_immediate() const {return true;}
+	virtual bool is_easy_to_negative() const {return true;}
 	virtual bool is_negative() const {return true;}
 	virtual std::shared_ptr<data_exp<T>> to_negative() const {return question_exp<T>::clone();}
 
