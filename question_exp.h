@@ -334,20 +334,22 @@ public:
 	virtual std::shared_ptr<data_exp<T>> final_optimize()
 	{
 		auto changed = false;
-		auto data = dexp_l->final_optimize();
-		if (data)
+		if (O::level() >= 2)
 		{
-			changed = true;
-			dexp_l = data;
-		}
+			auto data = dexp_l->final_optimize();
+			if (data)
+			{
+				changed = true;
+				dexp_l = data;
+			}
 
-		data = dexp_r->final_optimize();
-		if (data)
-		{
-			changed = true;
-			dexp_r = data;
+			data = dexp_r->final_optimize();
+			if (data)
+			{
+				changed = true;
+				dexp_r = data;
+			}
 		}
-
 		return changed ? merge_data_exp<T, O>(dexp_l, dexp_r, op) : std::shared_ptr<data_exp<T>>();
 	}
 
@@ -961,7 +963,7 @@ private:
 	std::shared_ptr<judge_exp<T>> jexp;
 };
 
-template <typename T> class logical_exp : public judge_exp<T>
+template <typename T, typename O> class logical_exp : public judge_exp<T>
 {
 public:
 	logical_exp(const std::shared_ptr<judge_exp<T>>& _jexp_l, const std::shared_ptr<judge_exp<T>>& _jexp_r) :
@@ -970,38 +972,45 @@ public:
 	virtual int get_depth() const {return 1 + std::max(jexp_l->get_depth(), jexp_l->get_depth());}
 	virtual void show_immediate_value() const {jexp_l->show_immediate_value(); jexp_r->show_immediate_value();}
 	virtual std::shared_ptr<judge_exp<T>> final_optimize()
-		{jexp_l->final_optimize(); jexp_r->final_optimize(); return std::shared_ptr<judge_exp<T>>();}
+	{
+		if (O::level() >= 2)
+		{
+			jexp_l->final_optimize();
+			jexp_r->final_optimize();
+		}
+		return std::shared_ptr<judge_exp<T>>();
+	}
 
 protected:
 	std::shared_ptr<judge_exp<T>> jexp_l;
 	std::shared_ptr<judge_exp<T>> jexp_r;
 };
 
-template <typename T> class and_judge_exp : public logical_exp<T>
+template <typename T, typename O> class and_judge_exp : public logical_exp<T, O>
 {
 public:
 	and_judge_exp(const std::shared_ptr<judge_exp<T>>& _jexp_l, const std::shared_ptr<judge_exp<T>>& _jexp_r) :
-		logical_exp<T>(_jexp_l, _jexp_r) {}
+		logical_exp<T, O>(_jexp_l, _jexp_r) {}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->jexp_l)(cb) && (*this->jexp_r)(cb);}
 };
 
-template <typename T> class or_judge_exp : public logical_exp<T>
+template <typename T, typename O> class or_judge_exp : public logical_exp<T, O>
 {
 public:
 	or_judge_exp(const std::shared_ptr<judge_exp<T>>& _jexp_l, const std::shared_ptr<judge_exp<T>>& _jexp_r) :
-		logical_exp<T>(_jexp_l, _jexp_r) {}
+		logical_exp<T, O>(_jexp_l, _jexp_r) {}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->jexp_l)(cb) || (*this->jexp_r)(cb);}
 };
 
-template <typename T> inline std::shared_ptr<judge_exp<T>>
+template <typename T, typename O> inline std::shared_ptr<judge_exp<T>>
 merge_judge_exp(const std::shared_ptr<judge_exp<T>>& jexp_l, const std::shared_ptr<judge_exp<T>>& jexp_r, const std::string& lop)
 {
 	if ("&&" == lop)
-		return std::make_shared<and_judge_exp<T>>(jexp_l, jexp_r);
+		return std::make_shared<and_judge_exp<T, O>>(jexp_l, jexp_r);
 	else if ("||" == lop)
-		return std::make_shared<or_judge_exp<T>>(jexp_l, jexp_r);
+		return std::make_shared<or_judge_exp<T, O>>(jexp_l, jexp_r);
 	else
 		throw("undefined logical operator " + lop);
 }
@@ -1379,7 +1388,7 @@ private:
 			if (lop_2.empty())
 				throw("missing logical operator!");
 
-			judge_2 = qme::merge_judge_exp(judge_2, judge, lop_2);
+			judge_2 = qme::merge_judge_exp<T, O>(judge_2, judge, lop_2);
 			lop_2.clear();
 		}
 		else if (judge_1)
@@ -1391,7 +1400,7 @@ private:
 				judge_2 = judge;
 			else
 			{
-				judge_1 = qme::merge_judge_exp(judge_1, judge, lop_1);
+				judge_1 = qme::merge_judge_exp<T, O>(judge_1, judge, lop_1);
 				lop_1.clear();
 			}
 		}
@@ -1423,7 +1432,7 @@ private:
 			throw("missing logical operand!");
 		else if (judge_2)
 		{
-			judge_1 = qme::merge_judge_exp(judge_1, judge_2, lop_1);
+			judge_1 = qme::merge_judge_exp<T, O>(judge_1, judge_2, lop_1);
 			lop_1.clear();
 			judge_2.reset();
 		}
@@ -1576,7 +1585,7 @@ private:
 
 					if ("||" == item)
 					{
-						judge_1 = qme::merge_judge_exp(judge_1, judge_2, lop_1);
+						judge_1 = qme::merge_judge_exp<T, O>(judge_1, judge_2, lop_1);
 						lop_1 = item;
 						judge_2.reset();
 					}
