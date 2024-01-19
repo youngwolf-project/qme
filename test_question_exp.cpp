@@ -32,6 +32,20 @@ template<typename T> void execute_qme(cpu_timer& timer, const std::shared_ptr<qm
 {
 	timer.restart();
 	auto re = (*exp)(cb);
+	//since recursion is used during the whole compilation and execution, if your expression is too complicated to
+	// be compiled and executed (stack overflow), use following statement to execute it and O0 to compile it,
+	// then no recursion will be introduced.
+	//with optimization level O0, following functions are still available, if you're encountering above situation,
+	// you should not call them manually, please note:
+	// is_easy_to_negative
+	// is_negative
+	// get_depth
+	// show_immediate_value
+	// merge_with
+	// trim_myself
+	// final_optimize
+	// to_negative
+	//auto re = qme::safe_execute(exp, cb);
 	printf("spent %f seconds.\n", timer.elapsed());
 	++exec_succ;
 	if (re == exp_re)

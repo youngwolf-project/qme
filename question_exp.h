@@ -123,7 +123,7 @@ public:
 template <typename T, typename O>
 inline std::shared_ptr<data_exp<T>> merge_data_exp(const std::shared_ptr<data_exp<T>>&, const std::shared_ptr<data_exp<T>>&, char);
 template <typename T, typename O> class composite_variable_data_exp;
-template <typename T, typename O> class immediate_data_exp;
+template <typename T> class immediate_data_exp;
 
 template <typename T>
 inline bool is_same_composite_variable(const std::shared_ptr<data_exp<T>>& dexp_l, const std::shared_ptr<data_exp<T>>& dexp_r)
@@ -303,7 +303,7 @@ public:
 			if ((dexp_l->is_negative() && (dexp_r->is_negative() || dexp_r->is_easy_to_negative())) ||
 				(dexp_r->is_negative() && (dexp_l->is_negative() || dexp_l->is_easy_to_negative())))
 				return merge_data_exp<T, O>(dexp_l->to_negative(), dexp_r->to_negative(), '/');
-			else if (O::level() < 3 && is_same_composite_variable<T>(dexp_l, dexp_r))
+			else if (O::level() < 3 && is_same_composite_variable(dexp_l, dexp_r))
 			{
 				//'N1*a^M1 / N2*a^M2' -> 'N1*a^(M1-M2) / N2' where M1 > M2 > 0
 				//for other conditions, we will handle them in composite_variable_data_exp's:
@@ -316,7 +316,7 @@ public:
 				{
 					dexp_l = std::make_shared<composite_variable_data_exp<T, O>>(dexp_l->get_variable_name(),
 						dexp_l->get_multiplier(), exponent_l - exponent_r);
-					dexp_r = std::make_shared<immediate_data_exp<T, O>>(dexp_r->get_multiplier());
+					dexp_r = std::make_shared<immediate_data_exp<T>>(dexp_r->get_multiplier());
 					return trim_myself();
 				}
 			}
@@ -329,22 +329,20 @@ public:
 	virtual std::shared_ptr<data_exp<T>> final_optimize()
 	{
 		auto changed = false;
-		if (O::level() >= 2)
+		auto data = dexp_l->final_optimize();
+		if (data)
 		{
-			auto data = dexp_l->final_optimize();
-			if (data)
-			{
-				changed = true;
-				dexp_l = data;
-			}
-
-			data = dexp_r->final_optimize();
-			if (data)
-			{
-				changed = true;
-				dexp_r = data;
-			}
+			changed = true;
+			dexp_l = data;
 		}
+
+		data = dexp_r->final_optimize();
+		if (data)
+		{
+			changed = true;
+			dexp_r = data;
+		}
+
 		return changed ? merge_data_exp<T, O>(dexp_l, dexp_r, op) : std::shared_ptr<data_exp<T>>();
 	}
 
@@ -450,7 +448,7 @@ public:
 	}
 };
 
-template <typename T, typename O> class immediate_data_exp : public data_exp<T>
+template <typename T> class immediate_data_exp : public data_exp<T>
 {
 public:
 	immediate_data_exp() : T(0) {}
@@ -463,7 +461,7 @@ public:
 	virtual void show_immediate_value() const {std::cout << ' ' << value;}
 	virtual bool merge_with(char other_op, const std::shared_ptr<data_exp<T>>& other_exp)
 		{return other_exp->is_immediate() ? do_merge_with(other_op, other_exp->get_immediate_value()) : false;}
-	virtual std::shared_ptr<data_exp<T>> to_negative() const {return std::make_shared<immediate_data_exp<T, O>>(-value);}
+	virtual std::shared_ptr<data_exp<T>> to_negative() const {return std::make_shared<immediate_data_exp<T>>(-value);}
 
 	virtual T operator()(const std::function<T(const std::string&)>&) const
 	{
@@ -674,14 +672,14 @@ public:
 	virtual std::shared_ptr<data_exp<T>> trim_myself()
 	{
 		if (0 == multiplier || 0 == exponent)
-			return std::make_shared<immediate_data_exp<T, O>>(multiplier);
+			return std::make_shared<immediate_data_exp<T>>(multiplier);
 
 		return std::shared_ptr<data_exp<T>>();
 	}
 
 	virtual std::shared_ptr<data_exp<T>> final_optimize()
 	{
-		std::shared_ptr<data_exp<T>> data = std::make_shared<immediate_data_exp<T, O>>(multiplier);
+		std::shared_ptr<data_exp<T>> data = std::make_shared<immediate_data_exp<T>>(multiplier);
 		if (0 == multiplier || 0 == exponent)
 			return data;
 		else if (1 != multiplier && -1 != multiplier && exponent > 1)
@@ -809,7 +807,12 @@ template <typename T> class judge_exp : public exp
 {
 public:
 	virtual bool is_judge() const {return true;}
+	virtual bool is_composite() const {return false;}
 	virtual int get_depth() const {return 1;}
+	virtual const std::string& get_operator() const {throw("unsupported get operator operation!");}
+	virtual std::shared_ptr<judge_exp<T>> get_1st_judge() const {throw("unsupported get 1st judge operation!");}
+	virtual std::shared_ptr<judge_exp<T>> get_2nd_judge() const {throw("unsupported get 2nd judge operation!");}
+
 	virtual void show_immediate_value() const = 0;
 	virtual std::shared_ptr<judge_exp<T>> final_optimize() = 0;
 
@@ -965,56 +968,183 @@ private:
 	std::shared_ptr<judge_exp<T>> jexp;
 };
 
-template <typename T, typename O> class logical_exp : public judge_exp<T>
+template <typename T> class logical_exp : public judge_exp<T>
 {
 public:
-	logical_exp(const std::shared_ptr<judge_exp<T>>& _jexp_l, const std::shared_ptr<judge_exp<T>>& _jexp_r) :
-		jexp_l(_jexp_l), jexp_r(_jexp_r) {}
+	logical_exp(const std::shared_ptr<judge_exp<T>>& _jexp_l, const std::shared_ptr<judge_exp<T>>& _jexp_r, const std::string& _lop) :
+		lop(_lop), jexp_l(_jexp_l), jexp_r(_jexp_r) {}
 
+	virtual bool is_composite() const {return true;}
+	virtual const std::string& get_operator() const {return lop;}
+	virtual std::shared_ptr<judge_exp<T>> get_1st_judge() const {return jexp_l;}
+	virtual std::shared_ptr<judge_exp<T>> get_2nd_judge() const {return jexp_r;}
 	virtual int get_depth() const {return 1 + std::max(jexp_l->get_depth(), jexp_l->get_depth());}
+
 	virtual void show_immediate_value() const {jexp_l->show_immediate_value(); jexp_r->show_immediate_value();}
 	virtual std::shared_ptr<judge_exp<T>> final_optimize()
 	{
-		if (O::level() >= 2)
-		{
-			jexp_l->final_optimize();
-			jexp_r->final_optimize();
-		}
+		jexp_l->final_optimize();
+		jexp_r->final_optimize();
+
 		return std::shared_ptr<judge_exp<T>>();
 	}
 
 protected:
+	std::string lop;
 	std::shared_ptr<judge_exp<T>> jexp_l;
 	std::shared_ptr<judge_exp<T>> jexp_r;
 };
 
-template <typename T, typename O> class and_judge_exp : public logical_exp<T, O>
+template <typename T> class and_judge_exp : public logical_exp<T>
 {
 public:
 	and_judge_exp(const std::shared_ptr<judge_exp<T>>& _jexp_l, const std::shared_ptr<judge_exp<T>>& _jexp_r) :
-		logical_exp<T, O>(_jexp_l, _jexp_r) {}
+		logical_exp<T>(_jexp_l, _jexp_r, "&&") {}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->jexp_l)(cb) && (*this->jexp_r)(cb);}
 };
 
-template <typename T, typename O> class or_judge_exp : public logical_exp<T, O>
+template <typename T> class or_judge_exp : public logical_exp<T>
 {
 public:
 	or_judge_exp(const std::shared_ptr<judge_exp<T>>& _jexp_l, const std::shared_ptr<judge_exp<T>>& _jexp_r) :
-		logical_exp<T, O>(_jexp_l, _jexp_r) {}
+		logical_exp<T>(_jexp_l, _jexp_r, "||") {}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->jexp_l)(cb) || (*this->jexp_r)(cb);}
 };
 
-template <typename T, typename O> inline std::shared_ptr<judge_exp<T>>
+template <typename T> inline std::shared_ptr<judge_exp<T>>
 merge_judge_exp(const std::shared_ptr<judge_exp<T>>& jexp_l, const std::shared_ptr<judge_exp<T>>& jexp_r, const std::string& lop)
 {
 	if ("&&" == lop)
-		return std::make_shared<and_judge_exp<T, O>>(jexp_l, jexp_r);
+		return std::make_shared<and_judge_exp<T>>(jexp_l, jexp_r);
 	else if ("||" == lop)
-		return std::make_shared<or_judge_exp<T, O>>(jexp_l, jexp_r);
+		return std::make_shared<or_judge_exp<T>>(jexp_l, jexp_r);
 	else
 		throw("undefined logical operator " + lop);
+}
+/////////////////////////////////////////////////////////////////////////////////////////
+
+/////////////////////////////////////////////////////////////////////////////////////////
+template <typename T> class immediate_data
+{
+public:
+	immediate_data() : value(0) {}
+	immediate_data(T v) : value(v) {}
+
+	T get_immediate_value() const {return value;}
+	bool merge_with(char other_op, T v)
+	{
+		switch (other_op)
+		{
+		case '+':
+			value += v;
+			break;
+		case '-':
+			value -= v;
+			break;
+		case '*':
+			value *= v;
+			break;
+		case '/':
+			if (0 == v)
+				throw("divide zero");
+			value /= v;
+			break;
+		default:
+			throw("undefined operator " + std::string(1, other_op));
+			break;
+		}
+
+		return true;
+	}
+
+private:
+	T value;
+};
+
+//since recursion is used during the whole compilation and execution, if your expression is too complicated to
+// be compiled and executed (stack overflow), use following statement to execute it and O0 to compile it,
+// then no recursion will be introduced.
+//with optimization level O0, following functions are still available, if you're encountering above situation,
+// you should not call them manually, please note:
+// is_easy_to_negative
+// is_negative
+// get_depth
+// show_immediate_value
+// merge_with
+// trim_myself
+// final_optimize
+// to_negative
+template <typename T> class question_exp;
+template <typename T> inline T safe_execute(const std::shared_ptr<data_exp<T>>& dexp, const std::function<T(const std::string&)>& cb)
+{
+	auto qexp = std::dynamic_pointer_cast<question_exp<T>>(dexp);
+	if (qexp)
+		return qexp->safe_execute(cb);
+
+	immediate_data<T> re;
+	std::list<std::shared_ptr<data_exp<T>>> dexps;
+	for (auto data = dexp; true;)
+		if (data->is_composite())
+		{
+			dexps.push_back(data);
+			data = data->get_1st_data();
+		}
+		else
+		{
+			re.merge_with('+', (*data)(cb));
+			break;
+		}
+
+	for (auto iter = dexps.rbegin(); iter != dexps.rend(); ++iter)
+		re.merge_with((*iter)->get_operator(), safe_execute((*iter)->get_2nd_data(), cb));
+
+	return re.get_immediate_value();
+}
+
+//since recursion is used during the whole compilation and execution, if your expression is too complicated to
+// be compiled and executed (stack overflow), use following statement to execute it and O0 to compile it,
+// then no recursion will be introduced.
+//with optimization level O0, following functions are still available, if you're encountering above situation,
+// you should not call them manually, please note:
+// is_easy_to_negative
+// is_negative
+// get_depth
+// show_immediate_value
+// merge_with
+// trim_myself
+// final_optimize
+// to_negative
+template <typename T> inline bool safe_execute(const std::shared_ptr<judge_exp<T>>& jexp, const std::function<T(const std::string&)>& cb)
+{
+	auto re = false;
+	std::list<std::shared_ptr<judge_exp<T>>> jexps;
+	for (auto judge = jexp; true;)
+		if (judge->is_composite())
+		{
+			jexps.push_back(judge);
+			judge = judge->get_1st_judge();
+		}
+		else
+		{
+			re = (*judge)(cb);
+			break;
+		}
+
+	for (auto iter = jexps.rbegin(); iter != jexps.rend(); ++iter)
+	{
+		auto lop = (*iter)->get_operator();
+		//this if statement will impact efficiency, but we have no choice
+		if ("&&" == lop)
+			re = re && safe_execute((*iter)->get_2nd_judge(), cb);
+		else if ("||" == lop)
+			re = re || safe_execute((*iter)->get_2nd_judge(), cb);
+		else
+			throw("undefined logical operator " + lop);
+	}
+
+	return re;
 }
 /////////////////////////////////////////////////////////////////////////////////////////
 
@@ -1048,6 +1178,9 @@ public:
 
 	virtual T operator()(const std::function<T(const std::string&)>& cb) const {return (*jexp)(cb) ? (*dexp_l)(cb) : (*dexp_r)(cb);}
 
+	virtual T safe_execute(const std::function<T(const std::string&)>& cb) const
+		{return qme::safe_execute(jexp, cb) ? qme::safe_execute(dexp_l, cb) : qme::safe_execute(dexp_r, cb);}
+
 protected:
 	std::shared_ptr<data_exp<T>> clone() const {return std::make_shared<question_exp<T>>(jexp, dexp_l, dexp_r);}
 
@@ -1068,8 +1201,31 @@ public:
 	virtual std::shared_ptr<data_exp<T>> to_negative() const {return question_exp<T>::clone();}
 
 	virtual T operator()(const std::function<T(const std::string&)>& cb) const {return -question_exp<T>::operator()(cb);}
+
+	virtual T safe_execute(const std::function<T(const std::string&)>& cb) const {return -question_exp<T>::safe_execute(cb);}
 };
 /////////////////////////////////////////////////////////////////////////////////////////
+
+template <typename T, typename O, template<typename> class Exp>
+inline std::shared_ptr<Exp<T>> final_optimize(const std::shared_ptr<Exp<T>>& exp)
+{
+	auto re = exp;
+	if (O::level() >= 2)
+	{
+		auto final_re = re->final_optimize();
+		if (final_re)
+			re = final_re;
+	}
+#ifdef DEBUG
+	if (O::level() > 0)
+	{
+		printf(" max depth: %d\n immediate values:", re->get_depth());
+		re->show_immediate_value();
+		putchar('\n');
+	}
+#endif
+	return re;
+}
 
 template <typename T = float, typename O = O3> class compiler
 {
@@ -1093,17 +1249,6 @@ public:
 		auto re = std::dynamic_pointer_cast<Exp<T>>(exp);
 		if (!re)
 			puts("\033[31mincomplete expression!\033[0m");
-		else
-		{
-			auto final_re = re->final_optimize();
-			if (final_re)
-				re = final_re;
-#ifdef DEBUG
-			printf(" max depth: %d\n immediate values:", re->get_depth());
-			re->show_immediate_value();
-			putchar('\n');
-#endif
-		}
 
 		return re;
 	}
@@ -1171,6 +1316,10 @@ public:
 			auto re = compile(split(expression), sub_exps);
 			if (!re)
 				throw("incomplete expression!");
+			else if (re->is_data())
+				re = final_optimize<T, O, data_exp>(std::dynamic_pointer_cast<data_exp<T>>(re));
+			else
+				re = final_optimize<T, O, judge_exp>(std::dynamic_pointer_cast<judge_exp<T>>(re));
 
 			return re;
 		}
@@ -1390,7 +1539,7 @@ private:
 			if (lop_2.empty())
 				throw("missing logical operator!");
 
-			judge_2 = qme::merge_judge_exp<T, O>(judge_2, judge, lop_2);
+			judge_2 = qme::merge_judge_exp(judge_2, judge, lop_2);
 			lop_2.clear();
 		}
 		else if (judge_1)
@@ -1402,7 +1551,7 @@ private:
 				judge_2 = judge;
 			else
 			{
-				judge_1 = qme::merge_judge_exp<T, O>(judge_1, judge, lop_1);
+				judge_1 = qme::merge_judge_exp(judge_1, judge, lop_1);
 				lop_1.clear();
 			}
 		}
@@ -1434,7 +1583,7 @@ private:
 			throw("missing logical operand!");
 		else if (judge_2)
 		{
-			judge_1 = qme::merge_judge_exp<T, O>(judge_1, judge_2, lop_1);
+			judge_1 = qme::merge_judge_exp(judge_1, judge_2, lop_1);
 			lop_1.clear();
 			judge_2.reset();
 		}
@@ -1463,10 +1612,10 @@ private:
 		}
 		else if (std::string::npos != vov.find('.') || std::string::npos != vov.find('e') || std::string::npos != vov.find('E'))
 			//todo, verify float data
-			return std::make_shared<immediate_data_exp<T, O>>((T) atof(vov.data())); //float
+			return std::make_shared<immediate_data_exp<T>>((T) atof(vov.data())); //float
 		else
 			//todo, verify integer data
-			return std::make_shared<immediate_data_exp<T, O>>((T) atoll(vov.data())); //integer
+			return std::make_shared<immediate_data_exp<T>>((T) atoll(vov.data())); //integer
 	}
 
 	static std::shared_ptr<exp> compile(const std::vector<std::string>& items, const std::map<std::string, sub_exp>& sub_exps,
@@ -1587,7 +1736,7 @@ private:
 
 					if ("||" == item)
 					{
-						judge_1 = qme::merge_judge_exp<T, O>(judge_1, judge_2, lop_1);
+						judge_1 = qme::merge_judge_exp(judge_1, judge_2, lop_1);
 						lop_1 = item;
 						judge_2.reset();
 					}
