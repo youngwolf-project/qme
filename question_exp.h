@@ -84,6 +84,7 @@ public:
 
 	virtual bool is_data() const {return false;}
 	virtual bool is_judge() const {return false;}
+	virtual void clear() {}
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -390,6 +391,8 @@ public:
 			break;
 		}
 	}
+
+	virtual void clear() {dexp_l.reset(); dexp_r.reset();}
 
 private:
 	char op;
@@ -800,6 +803,114 @@ template <typename T, typename O> inline std::shared_ptr<data_exp<T>> merge_data
 	const std::shared_ptr<data_exp<T>>& dexp_l, const std::shared_ptr<data_exp<T>>& dexp_r, const std::string& op)
 	{return merge_data_exp<T, O>(dexp_l, dexp_r, op[0]);}
 
+template <typename T> class immediate_data
+{
+public:
+	immediate_data() : value(0) {}
+	immediate_data(T v) : value(v) {}
+
+	T get_immediate_value() const {return value;}
+	bool merge_with(char other_op, T v)
+	{
+		switch (other_op) //this switch statement will impact efficiency, but we have no choice
+		{
+		case '+':
+			value += v;
+			break;
+		case '-':
+			value -= v;
+			break;
+		case '*':
+			value *= v;
+			break;
+		case '/':
+			if (0 == v)
+				throw("divide zero");
+			value /= v;
+			break;
+		default:
+			throw("undefined operator " + std::string(1, other_op));
+			break;
+		}
+
+		return true;
+	}
+
+private:
+	T value;
+};
+
+//since recursion is used during the whole compilation and execution, if your expression is too complicated to
+// be compiled and executed (stack overflow), use
+// O0 to compile it,
+// qme::safe_execute to execute it and
+// qme::safe_delete to delete it,
+// then no recursion will be introduced.
+//with optimization level O0, following functions are still available, if you're encountering above situation,
+// you should not call them manually, please note:
+// is_easy_to_negative
+// is_negative
+// get_depth
+// show_immediate_value
+// merge_with
+// trim_myself
+// final_optimize
+// to_negative
+template <typename T> class question_exp;
+template <typename T> inline T safe_execute(const std::shared_ptr<data_exp<T>>& dexp, const std::function<T(const std::string&)>& cb)
+{
+	auto qexp = std::dynamic_pointer_cast<question_exp<T>>(dexp);
+	if (qexp)
+		return qexp->safe_execute(cb);
+	else if (!dexp->is_composite())
+		return (*dexp)(cb);
+
+	immediate_data<T> re;
+	std::list<std::shared_ptr<data_exp<T>>> dexps;
+	for (auto data = dexp; true;)
+		if (data->is_composite())
+		{
+			dexps.push_back(data);
+			data = data->get_1st_data();
+		}
+		else
+		{
+			re.merge_with('+', safe_execute(data, cb));
+			break;
+		}
+
+	for (auto iter = dexps.rbegin(); iter != dexps.rend(); ++iter)
+		re.merge_with((*iter)->get_operator(), safe_execute((*iter)->get_2nd_data(), cb));
+
+	return re.get_immediate_value();
+}
+template <typename T> inline void safe_delete(const std::shared_ptr<data_exp<T>>& dexp)
+{
+	auto qexp = std::dynamic_pointer_cast<question_exp<T>>(dexp);
+	if (qexp)
+		return qexp->safe_delete();
+	else if (!dexp->is_composite())
+		return;
+
+	std::list<std::shared_ptr<data_exp<T>>> dexps;
+	for (auto data = dexp; true;)
+		if (data->is_composite())
+		{
+			dexps.push_back(data);
+			data = data->get_1st_data();
+		}
+		else
+		{
+			safe_delete(data);
+			break;
+		}
+
+	for (auto iter = dexps.rbegin(); iter != dexps.rend(); ++iter)
+	{
+		safe_delete((*iter)->get_2nd_data());
+		(*iter)->clear();
+	}
+}
 /////////////////////////////////////////////////////////////////////////////////////////
 
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -817,7 +928,77 @@ public:
 	virtual std::shared_ptr<judge_exp<T>> final_optimize() = 0;
 
 	virtual bool operator()(const std::function<T(const std::string&)>&) const = 0;
+	virtual bool safe_execute(const std::function<T(const std::string&)>&) const = 0;
+	virtual void safe_delete() const = 0;
 };
+
+//since recursion is used during the whole compilation and execution, if your expression is too complicated to
+// be compiled and executed (stack overflow), use
+// O0 to compile it,
+// qme::safe_execute to execute it and
+// qme::safe_delete to delete it,
+// then no recursion will be introduced.
+//with optimization level O0, following functions are still available, if you're encountering above situation,
+// you should not call them manually, please note:
+// is_easy_to_negative
+// is_negative
+// get_depth
+// show_immediate_value
+// merge_with
+// trim_myself
+// final_optimize
+// to_negative
+template <typename T> inline bool safe_execute(const std::shared_ptr<judge_exp<T>>& jexp, const std::function<T(const std::string&)>& cb)
+{
+	auto re = false;
+	std::list<std::shared_ptr<judge_exp<T>>> jexps;
+	for (auto judge = jexp; true;)
+		if (judge->is_composite())
+		{
+			jexps.push_back(judge);
+			judge = judge->get_1st_judge();
+		}
+		else
+		{
+			re = judge->safe_execute(cb);
+			break;
+		}
+
+	for (auto iter = jexps.rbegin(); iter != jexps.rend(); ++iter)
+	{
+		auto lop = (*iter)->get_operator();
+		//this if statement will impact efficiency, but we have no choice
+		if ("&&" == lop)
+			re = re && safe_execute((*iter)->get_2nd_judge(), cb);
+		else if ("||" == lop)
+			re = re || safe_execute((*iter)->get_2nd_judge(), cb);
+		else
+			throw("undefined logical operator " + lop);
+	}
+
+	return re;
+}
+template <typename T> inline void safe_delete(const std::shared_ptr<judge_exp<T>>& jexp)
+{
+	std::list<std::shared_ptr<judge_exp<T>>> jexps;
+	for (auto judge = jexp; true;)
+		if (judge->is_composite())
+		{
+			jexps.push_back(judge);
+			judge = judge->get_1st_judge();
+		}
+		else
+		{
+			judge->safe_delete();
+			break;
+		}
+
+	for (auto iter = jexps.rbegin(); iter != jexps.rend(); ++iter)
+	{
+		safe_delete((*iter)->get_2nd_judge());
+		(*iter)->clear();
+	}
+}
 
 template <typename T> class unitary_judge_exp : public judge_exp<T>
 {
@@ -835,6 +1016,8 @@ public:
 		return std::shared_ptr<judge_exp<T>>();
 	}
 
+	virtual void safe_delete() const {qme::safe_delete(dexp);}
+
 protected:
 	std::shared_ptr<data_exp<T>> dexp;
 };
@@ -845,6 +1028,7 @@ public:
 	equal_0_judge_exp(const std::shared_ptr<data_exp<T>>& _dexp) : unitary_judge_exp<T>(_dexp) {}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return 0 == (*this->dexp)(cb);}
+	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const {return 0 == qme::safe_execute(this->dexp, cb);}
 };
 
 template <typename T> class not_equal_0_judge_exp : public unitary_judge_exp<T>
@@ -853,6 +1037,7 @@ public:
 	not_equal_0_judge_exp(const std::shared_ptr<data_exp<T>>& _dexp) : unitary_judge_exp<T>(_dexp) {}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return 0 != (*this->dexp)(cb);}
+	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const {return 0 != qme::safe_execute(this->dexp, cb);}
 };
 
 template <typename T> class binary_judge_exp : public judge_exp<T>
@@ -876,6 +1061,8 @@ public:
 		return std::shared_ptr<judge_exp<T>>();
 	}
 
+	virtual void safe_delete() const {qme::safe_delete(dexp_l); qme::safe_delete(dexp_r);}
+
 protected:
 	std::shared_ptr<data_exp<T>> dexp_l, dexp_r;
 };
@@ -887,6 +1074,8 @@ public:
 		binary_judge_exp<T>(_dexp_l, _dexp_r) {}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) > (*this->dexp_r)(cb);}
+	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const
+		{return qme::safe_execute(this->dexp_l, cb) > qme::safe_execute(this->dexp_r, cb);}
 };
 
 template <typename T> class bigger_equal_judge_exp : public binary_judge_exp<T>
@@ -896,6 +1085,8 @@ public:
 		binary_judge_exp<T>(_dexp_l, _dexp_r) {}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) >= (*this->dexp_r)(cb);}
+	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const
+		{return qme::safe_execute(this->dexp_l, cb) >= qme::safe_execute(this->dexp_r, cb);}
 };
 
 template <typename T> class smaller_judge_exp : public binary_judge_exp<T>
@@ -905,6 +1096,8 @@ public:
 		binary_judge_exp<T>(_dexp_l, _dexp_r) {}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) < (*this->dexp_r)(cb);}
+	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const
+		{return qme::safe_execute(this->dexp_l, cb) < qme::safe_execute(this->dexp_r, cb);}
 };
 
 template <typename T> class smaller_equal_judge_exp : public binary_judge_exp<T>
@@ -914,6 +1107,8 @@ public:
 		binary_judge_exp<T>(_dexp_l, _dexp_r) {}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) <= (*this->dexp_r)(cb);}
+	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const
+		{return qme::safe_execute(this->dexp_l, cb) <= qme::safe_execute(this->dexp_r, cb);}
 };
 
 template <typename T> class equal_judge_exp : public binary_judge_exp<T>
@@ -923,6 +1118,8 @@ public:
 		binary_judge_exp<T>(_dexp_l, _dexp_r) {}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) == (*this->dexp_r)(cb);}
+	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const
+		{return qme::safe_execute(this->dexp_l, cb) == qme::safe_execute(this->dexp_r, cb);}
 };
 
 template <typename T> class not_equal_judge_exp : public binary_judge_exp<T>
@@ -932,6 +1129,8 @@ public:
 		binary_judge_exp<T>(_dexp_l, _dexp_r) {}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) != (*this->dexp_r)(cb);}
+	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const
+		{return qme::safe_execute(this->dexp_l, cb) != qme::safe_execute(this->dexp_r, cb);}
 };
 
 template <typename T> inline std::shared_ptr<judge_exp<T>> make_binary_judge_exp(
@@ -963,6 +1162,8 @@ public:
 	virtual std::shared_ptr<judge_exp<T>> final_optimize() {return jexp->final_optimize();}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return !(*jexp)(cb);}
+	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const {return !qme::safe_execute(jexp, cb);}
+	virtual void safe_delete() const {qme::safe_delete(jexp);}
 
 private:
 	std::shared_ptr<judge_exp<T>> jexp;
@@ -988,6 +1189,10 @@ public:
 
 		return std::shared_ptr<judge_exp<T>>();
 	}
+
+	virtual bool safe_execute(const std::function<T(const std::string&)>&) const {throw("unsupported safe execute operation!");}
+	virtual void safe_delete() const {qme::safe_delete(jexp_l); qme::safe_delete(jexp_r);}
+	virtual void clear() {jexp_l.reset(); jexp_r.reset();}
 
 protected:
 	std::string lop;
@@ -1026,129 +1231,6 @@ merge_judge_exp(const std::shared_ptr<judge_exp<T>>& jexp_l, const std::shared_p
 /////////////////////////////////////////////////////////////////////////////////////////
 
 /////////////////////////////////////////////////////////////////////////////////////////
-template <typename T> class immediate_data
-{
-public:
-	immediate_data() : value(0) {}
-	immediate_data(T v) : value(v) {}
-
-	T get_immediate_value() const {return value;}
-	bool merge_with(char other_op, T v)
-	{
-		switch (other_op)
-		{
-		case '+':
-			value += v;
-			break;
-		case '-':
-			value -= v;
-			break;
-		case '*':
-			value *= v;
-			break;
-		case '/':
-			if (0 == v)
-				throw("divide zero");
-			value /= v;
-			break;
-		default:
-			throw("undefined operator " + std::string(1, other_op));
-			break;
-		}
-
-		return true;
-	}
-
-private:
-	T value;
-};
-
-//since recursion is used during the whole compilation and execution, if your expression is too complicated to
-// be compiled and executed (stack overflow), use following statement to execute it and O0 to compile it,
-// then no recursion will be introduced.
-//with optimization level O0, following functions are still available, if you're encountering above situation,
-// you should not call them manually, please note:
-// is_easy_to_negative
-// is_negative
-// get_depth
-// show_immediate_value
-// merge_with
-// trim_myself
-// final_optimize
-// to_negative
-template <typename T> class question_exp;
-template <typename T> inline T safe_execute(const std::shared_ptr<data_exp<T>>& dexp, const std::function<T(const std::string&)>& cb)
-{
-	auto qexp = std::dynamic_pointer_cast<question_exp<T>>(dexp);
-	if (qexp)
-		return qexp->safe_execute(cb);
-
-	immediate_data<T> re;
-	std::list<std::shared_ptr<data_exp<T>>> dexps;
-	for (auto data = dexp; true;)
-		if (data->is_composite())
-		{
-			dexps.push_back(data);
-			data = data->get_1st_data();
-		}
-		else
-		{
-			re.merge_with('+', (*data)(cb));
-			break;
-		}
-
-	for (auto iter = dexps.rbegin(); iter != dexps.rend(); ++iter)
-		re.merge_with((*iter)->get_operator(), safe_execute((*iter)->get_2nd_data(), cb));
-
-	return re.get_immediate_value();
-}
-
-//since recursion is used during the whole compilation and execution, if your expression is too complicated to
-// be compiled and executed (stack overflow), use following statement to execute it and O0 to compile it,
-// then no recursion will be introduced.
-//with optimization level O0, following functions are still available, if you're encountering above situation,
-// you should not call them manually, please note:
-// is_easy_to_negative
-// is_negative
-// get_depth
-// show_immediate_value
-// merge_with
-// trim_myself
-// final_optimize
-// to_negative
-template <typename T> inline bool safe_execute(const std::shared_ptr<judge_exp<T>>& jexp, const std::function<T(const std::string&)>& cb)
-{
-	auto re = false;
-	std::list<std::shared_ptr<judge_exp<T>>> jexps;
-	for (auto judge = jexp; true;)
-		if (judge->is_composite())
-		{
-			jexps.push_back(judge);
-			judge = judge->get_1st_judge();
-		}
-		else
-		{
-			re = (*judge)(cb);
-			break;
-		}
-
-	for (auto iter = jexps.rbegin(); iter != jexps.rend(); ++iter)
-	{
-		auto lop = (*iter)->get_operator();
-		//this if statement will impact efficiency, but we have no choice
-		if ("&&" == lop)
-			re = re && safe_execute((*iter)->get_2nd_judge(), cb);
-		else if ("||" == lop)
-			re = re || safe_execute((*iter)->get_2nd_judge(), cb);
-		else
-			throw("undefined logical operator " + lop);
-	}
-
-	return re;
-}
-/////////////////////////////////////////////////////////////////////////////////////////
-
-/////////////////////////////////////////////////////////////////////////////////////////
 template <typename T> class negative_question_exp;
 template <typename T> class question_exp : public data_exp<T>
 {
@@ -1180,6 +1262,7 @@ public:
 
 	virtual T safe_execute(const std::function<T(const std::string&)>& cb) const
 		{return qme::safe_execute(jexp, cb) ? qme::safe_execute(dexp_l, cb) : qme::safe_execute(dexp_r, cb);}
+	virtual void safe_delete() {qme::safe_delete(jexp); qme::safe_delete(dexp_l); qme::safe_delete(dexp_r);}
 
 protected:
 	std::shared_ptr<data_exp<T>> clone() const {return std::make_shared<question_exp<T>>(jexp, dexp_l, dexp_r);}
