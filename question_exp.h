@@ -84,6 +84,8 @@ public:
 
 	virtual bool is_data() const {return false;}
 	virtual bool is_judge() const {return false;}
+	virtual int get_depth() const {return 1;}
+	virtual void show_immediate_value() const {}
 	virtual void clear() {}
 };
 
@@ -100,7 +102,6 @@ public:
 	// 2 - with reducing existed negation operations, for example -a to a
 	virtual bool is_easy_to_negative() const {return false;}
 	virtual bool is_negative() const {return false;} //needs negation operation at runtime
-	virtual int get_depth() const {return 1;}
 	virtual int get_exponent() const {throw("unsupported get exponent operation!");}
 	virtual T get_multiplier() const {throw("unsupported get multiplier operation!");}
 	virtual T get_immediate_value() const {throw("unsupported get immediate value operation!");}
@@ -109,7 +110,6 @@ public:
 	virtual std::shared_ptr<data_exp<T>> get_1st_data() const {throw("unsupported get 1st data operation!");}
 	virtual std::shared_ptr<data_exp<T>> get_2nd_data() const {throw("unsupported get 2nd data operation!");}
 
-	virtual void show_immediate_value() const {}
 	virtual bool merge_with(char, const std::shared_ptr<data_exp<T>>&) {return false;}
 	virtual bool merge_with(const std::shared_ptr<data_exp<T>>&, char) {return false;}
 	virtual std::shared_ptr<data_exp<T>> trim_myself() {return std::shared_ptr<data_exp<T>>();}
@@ -803,6 +803,7 @@ template <typename T, typename O> inline std::shared_ptr<data_exp<T>> merge_data
 	const std::shared_ptr<data_exp<T>>& dexp_l, const std::shared_ptr<data_exp<T>>& dexp_r, const std::string& op)
 	{return merge_data_exp<T, O>(dexp_l, dexp_r, op[0]);}
 
+//used at execution time -- in safe_execute function
 template <typename T> class immediate_data
 {
 public:
@@ -865,7 +866,7 @@ template <typename T> inline T safe_execute(const std::shared_ptr<data_exp<T>>& 
 	else if (!dexp->is_composite())
 		return (*dexp)(cb);
 
-	immediate_data<T> re;
+	immediate_data<T> re_l;
 	std::list<std::shared_ptr<data_exp<T>>> dexps;
 	for (auto data = dexp; true;)
 		if (data->is_composite())
@@ -875,15 +876,38 @@ template <typename T> inline T safe_execute(const std::shared_ptr<data_exp<T>>& 
 		}
 		else
 		{
-			re.merge_with('+', safe_execute(data, cb));
+			re_l.merge_with('+', safe_execute(data, cb));
 			break;
 		}
 
 	for (auto iter = dexps.rbegin(); iter != dexps.rend(); ++iter)
-		re.merge_with((*iter)->get_operator(), safe_execute((*iter)->get_2nd_data(), cb));
+	{
+		std::list<std::shared_ptr<data_exp<T>>> dexps_r;
+		auto data = (*iter)->get_2nd_data();
+		while (data->is_composite())
+		{
+			dexps_r.push_back(data);
+			data = data->get_2nd_data();
+		}
 
-	return re.get_immediate_value();
+		if (dexps_r.empty())
+			re_l.merge_with((*iter)->get_operator(), safe_execute(data, cb));
+		else
+		{
+			auto re_r = safe_execute(dexps_r.back()->get_2nd_data(), cb);
+			for (auto iter2 = dexps_r.rbegin(); iter2 != dexps_r.rend(); ++iter2)
+			{
+				immediate_data<T> re_l(safe_execute((*iter2)->get_1st_data(), cb));
+				re_l.merge_with((*iter2)->get_operator(), re_r);
+				re_r = re_l.get_immediate_value();
+			}
+			re_l.merge_with((*iter)->get_operator(), re_r);
+		}
+	}
+
+	return re_l.get_immediate_value();
 }
+
 template <typename T> inline void safe_delete(const std::shared_ptr<data_exp<T>>& dexp)
 {
 	auto qexp = std::dynamic_pointer_cast<question_exp<T>>(dexp);
@@ -907,7 +931,26 @@ template <typename T> inline void safe_delete(const std::shared_ptr<data_exp<T>>
 
 	for (auto iter = dexps.rbegin(); iter != dexps.rend(); ++iter)
 	{
-		safe_delete((*iter)->get_2nd_data());
+		std::list<std::shared_ptr<data_exp<T>>> dexps_r;
+		auto data = (*iter)->get_2nd_data();
+		while (data->is_composite())
+		{
+			dexps_r.push_back(data);
+			data = data->get_2nd_data();
+		}
+
+		if (dexps_r.empty())
+			safe_delete(data);
+		else
+		{
+			safe_delete(dexps_r.back()->get_2nd_data());
+			for (auto iter2 = dexps_r.rbegin(); iter2 != dexps_r.rend(); ++iter2)
+			{
+				safe_delete((*iter2)->get_1st_data());
+				(*iter2)->clear();
+			}
+		}
+
 		(*iter)->clear();
 	}
 }
@@ -919,12 +962,10 @@ template <typename T> class judge_exp : public exp
 public:
 	virtual bool is_judge() const {return true;}
 	virtual bool is_composite() const {return false;}
-	virtual int get_depth() const {return 1;}
 	virtual const std::string& get_operator() const {throw("unsupported get operator operation!");}
 	virtual std::shared_ptr<judge_exp<T>> get_1st_judge() const {throw("unsupported get 1st judge operation!");}
 	virtual std::shared_ptr<judge_exp<T>> get_2nd_judge() const {throw("unsupported get 2nd judge operation!");}
 
-	virtual void show_immediate_value() const = 0;
 	virtual std::shared_ptr<judge_exp<T>> final_optimize() = 0;
 
 	virtual bool operator()(const std::function<T(const std::string&)>&) const = 0;
@@ -964,6 +1005,8 @@ template <typename T> inline bool safe_execute(const std::shared_ptr<judge_exp<T
 			break;
 		}
 
+	//cannot eliminate recursion in the right sub-tree as safe_execute for data_exp does,
+	//because we cannot impact the Short-Circuit Evaluation.
 	for (auto iter = jexps.rbegin(); iter != jexps.rend(); ++iter)
 	{
 		auto lop = (*iter)->get_operator();
@@ -978,6 +1021,7 @@ template <typename T> inline bool safe_execute(const std::shared_ptr<judge_exp<T
 
 	return re;
 }
+
 template <typename T> inline void safe_delete(const std::shared_ptr<judge_exp<T>>& jexp)
 {
 	std::list<std::shared_ptr<judge_exp<T>>> jexps;
@@ -993,6 +1037,9 @@ template <typename T> inline void safe_delete(const std::shared_ptr<judge_exp<T>
 			break;
 		}
 
+	//we can eliminate recursion in the right sub-tree as safe_delete for data_exp does,
+	//but since we cannot eliminate recursion in the right sub-tree in safe_execute for judge_exp,
+	//then eliminating recursion at here is useless.
 	for (auto iter = jexps.rbegin(); iter != jexps.rend(); ++iter)
 	{
 		safe_delete((*iter)->get_2nd_judge());
