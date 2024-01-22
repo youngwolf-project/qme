@@ -21,10 +21,11 @@ namespace qme
 //without any exchange between any data, nor merging of immediate values
 class O0 {public: static int level() {return 0;}};
 
-//not supported yet
+//without any exchange between any data, but merge adjacent immediate values
 class O1 {public: static int level() {return 1;}};
 
-//don't exchange the data orders between multiply and divide operations, for example:
+//don't exchange the data order for divide operations, nor transform them to multiply operations, for example:
+// 'b / (b / 3)' will not be transformed to '3', because the latter never triggers divide zero for integer (1 ~ 8 bytes)
 // '2 * a / 3' will not be transformed to '(2 / 3) * a', because the latter will always be zero for integer (1 ~ 8 bytes)
 // 'a * 2 / 3' will not be transformed to 'a * (2 / 3)', because the latter will always be zero for integer (1 ~ 8 bytes)
 // 'a / 2 * 3' will not be transformed to '(3 / 2) * a'
@@ -48,7 +49,7 @@ template<typename O> inline bool is_same_operator_level(char op_1, char op_2)
 	if (O::level() > 2)
 		return (is_operator_1(op_1) && is_operator_1(op_2)) || (is_operator_2(op_1) && is_operator_2(op_2));
 
-	return (is_operator_1(op_1) && is_operator_1(op_2)) || ('*' == op_1 && '*' == op_2) || ('/' == op_1 && '/' == op_2);
+	return (is_operator_1(op_1) && is_operator_1(op_2)) || ('*' == op_1 && '*' == op_2);
 }
 
 inline bool is_comparer(const char* input)
@@ -194,30 +195,30 @@ public:
 	{
 		if (is_same_operator_level<O>(op, other_op))
 		{
-			if (dexp_l->merge_with(other_op, other_exp))
+			if (O::level() < 2)
+			{
+				if (!other_exp->is_immediate())
+					return false;
+				else if (dexp_l->is_immediate())
+					return dexp_l->merge_with(other_op, other_exp);
+				else if (!dexp_r->is_immediate())
+					return false;
+
+				if ('-' == op)
+					other_op = '+' == other_op ? '-' : '+';
+				else if ('/' == op) //other_op must also be '/'
+					other_op = '*';
+				return dexp_r->merge_with(other_op, other_exp);
+			}
+			else if (dexp_l->merge_with(other_op, other_exp))
 				return true;
 			else if ('+' == op || '*' == op)
-			{
-				if (dexp_r->merge_with(other_op, other_exp))
-					return true;
-			}
-			else if ('+' == other_op)
-			{
-				if (dexp_r->merge_with('-', other_exp))
-					return true;
-			}
-			else if ('-' == other_op)
-			{
-				if (dexp_r->merge_with('+', other_exp))
-					return true;
-			}
-			else if ('*' == other_op)
-			{
-				if (dexp_r->merge_with('/', other_exp))
-					return true;
-			}
-			else if (dexp_r->merge_with('*', other_exp)) //must be /
-				return true;
+				return dexp_r->merge_with(other_op, other_exp);
+			else if ('-' == op)
+				other_op = '+' == other_op ? '-' : '+';
+			else if ('/' == op)
+				other_op = '*' == other_op ? '/' : '*';
+			return dexp_r->merge_with(other_op, other_exp);
 		}
 		else if (O::level() < 3 && '+' == other_op && '/' == op && //'N1*a^M / C + N2*a^M' -> '(N1 + N2*C)*a^M / C'
 			dexp_r->is_immediate() && is_same_composite_variable(dexp_l, other_exp) &&
@@ -774,13 +775,24 @@ template <typename T, typename O> inline std::shared_ptr<data_exp<T>> merge_data
 				if (!data)
 					data = dexp_l;
 			}
-			else
-				data = merge_data_exp<T, O>(dexp_l, dexp_r->get_1st_data(), op);
 
 			if ('-' == op)
 				op_2 = '-' == op_2 ? '+' : '-';
 			else if ('/' == op)
 				op_2 = '/' == op_2 ? '*' : '/';
+			if (!data)
+			{
+				if (dexp_l->merge_with(op_2, dexp_r->get_2nd_data()))
+				{
+					data = dexp_l->trim_myself();
+					if (!data)
+						data = dexp_l;
+					return merge_data_exp<T, O>(data, dexp_r->get_1st_data(), op);
+				}
+				else
+					data = merge_data_exp<T, O>(dexp_l, dexp_r->get_1st_data(), op);
+			}
+
 			return merge_data_exp<T, O>(data, dexp_r->get_2nd_data(), op_2);
 		}
 		else if (O::level() < 3 && '+' == op && '/' == op_2 && //'N1*a^M + N2*a^M / C' -> '(N1*C + N2)*a^M / C'
