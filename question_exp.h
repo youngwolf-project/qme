@@ -1017,18 +1017,56 @@ template <typename T> inline bool safe_execute(const std::shared_ptr<judge_exp<T
 			break;
 		}
 
-	//cannot eliminate recursion in the right sub-tree as safe_execute for data_exp does,
-	//because we cannot impact the Short-Circuit Evaluation.
 	for (auto iter = jexps.rbegin(); iter != jexps.rend(); ++iter)
 	{
 		auto lop = (*iter)->get_operator();
-		//this if statement will impact efficiency, but we have no choice
-		if ("&&" == lop)
-			re = re && safe_execute((*iter)->get_2nd_judge(), cb);
+		if ("&&" == lop) //this if statement will impact efficiency, but we have no choice
+		{
+			if (!re)
+				continue;
+		}
 		else if ("||" == lop)
-			re = re || safe_execute((*iter)->get_2nd_judge(), cb);
+		{
+			if (re)
+				continue;
+		}
 		else
 			throw("undefined logical operator " + lop);
+
+		std::list<std::shared_ptr<judge_exp<T>>> jexps_r;
+		auto judge = (*iter)->get_2nd_judge();
+		while (judge->is_composite())
+		{
+			jexps_r.push_back(judge);
+			judge = judge->get_2nd_judge();
+		}
+
+		if (jexps_r.empty())
+			re = judge->safe_execute(cb);
+		else
+		{
+			auto circuit = false;
+			for (auto iter2 = std::begin(jexps_r); !circuit && iter2 != std::end(jexps_r); ++iter2)
+			{
+				re = safe_execute((*iter2)->get_1st_judge(), cb);
+				lop = (*iter2)->get_operator();
+				if ("&&" == lop) //this if statement will impact efficiency, but we have no choice
+				{
+					if (!re)
+						circuit = true;
+				}
+				else if ("||" == lop)
+				{
+					if (re)
+						circuit = true;
+				}
+				else
+					throw("undefined logical operator " + lop);
+			}
+
+			if (!circuit)
+				re = jexps_r.back()->get_2nd_judge()->safe_execute(cb);
+		}
 	}
 
 	return re;
@@ -1049,12 +1087,28 @@ template <typename T> inline void safe_delete(const std::shared_ptr<judge_exp<T>
 			break;
 		}
 
-	//we can eliminate recursion in the right sub-tree as safe_delete for data_exp does,
-	//but since we cannot eliminate recursion in the right sub-tree in safe_execute for judge_exp,
-	//then eliminating recursion at here is useless.
 	for (auto iter = jexps.rbegin(); iter != jexps.rend(); ++iter)
 	{
-		safe_delete((*iter)->get_2nd_judge());
+		std::list<std::shared_ptr<judge_exp<T>>> jexps_r;
+		auto judge = (*iter)->get_2nd_judge();
+		while (judge->is_composite())
+		{
+			jexps_r.push_back(judge);
+			judge = judge->get_2nd_judge();
+		}
+
+		if (jexps_r.empty())
+			judge->safe_delete();
+		else
+		{
+			jexps_r.back()->get_2nd_judge()->safe_delete();
+			for (auto iter2 = jexps_r.rbegin(); iter2 != jexps_r.rend(); ++iter2)
+			{
+				safe_delete((*iter2)->get_1st_judge());
+				(*iter2)->clear();
+			}
+		}
+
 		(*iter)->clear();
 	}
 }
