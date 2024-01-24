@@ -34,7 +34,7 @@ template<typename T> void execute_qme(cpu_timer& timer, const std::shared_ptr<qm
 	auto re = (*exp)(cb);
 	//since recursion is used during the whole compilation and execution, if your expression is too complicated to
 	// be compiled and executed (stack overflow), use
-	// O0/O1 to compile it,
+	// qme::O0/qme::O1 to compile it,
 	// qme::safe_execute to execute it and
 	// qme::safe_delete to delete it,
 	// then no recursion will be introduced.
@@ -261,7 +261,7 @@ int main(int argc, const char* argv[])
 
 			//since recursion is used during the whole compilation and execution, if your expression is too complicated to
 			// be compiled and executed (stack overflow), use
-			// O0/O1 to compile it,
+			// qme::O0/qme::O1 to compile it,
 			// qme::safe_execute to execute it and
 			// qme::safe_delete to delete it,
 			// then no recursion will be introduced.
