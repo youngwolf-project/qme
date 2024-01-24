@@ -1420,15 +1420,13 @@ inline std::shared_ptr<Exp<T>> final_optimize(const std::shared_ptr<Exp<T>>& exp
 		auto final_re = re->final_optimize();
 		if (final_re)
 			re = final_re;
-	}
 #ifdef DEBUG
-	if (O::level() > 0)
-	{
 		printf(" max depth: %d\n immediate values:", re->get_depth());
 		re->show_immediate_value();
 		putchar('\n');
-	}
 #endif
+	}
+
 	return re;
 }
 
