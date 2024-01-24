@@ -888,6 +888,7 @@ template <typename T> inline T safe_execute(const std::shared_ptr<data_exp<T>>& 
 		}
 		else
 		{
+			//for question_exp, recursion still happens at here, any ideas?
 			re_l.merge_with('+', safe_execute(data, cb));
 			break;
 		}
@@ -903,12 +904,14 @@ template <typename T> inline T safe_execute(const std::shared_ptr<data_exp<T>>& 
 		}
 
 		if (dexps_r.empty())
-			re_l.merge_with((*iter)->get_operator(), safe_execute(data, cb));
+			re_l.merge_with((*iter)->get_operator(), safe_execute(data, cb)); //for question_exp, recursion still happens at here, any ideas?
 		else
 		{
+			//for question_exp, recursion still happens at here, any ideas?
 			auto re_r = safe_execute(dexps_r.back()->get_2nd_data(), cb);
 			for (auto iter2 = dexps_r.rbegin(); iter2 != dexps_r.rend(); ++iter2)
 			{
+				//if the left leaf is a binary_data_exp or question_exp, recursion still happens at here, any ideas?
 				immediate_data<T> re_l(safe_execute((*iter2)->get_1st_data(), cb));
 				re_l.merge_with((*iter2)->get_operator(), re_r);
 				re_r = re_l.get_immediate_value();
@@ -937,6 +940,7 @@ template <typename T> inline void safe_delete(const std::shared_ptr<data_exp<T>>
 		}
 		else
 		{
+			//for question_exp, recursion still happens at here, any ideas?
 			safe_delete(data);
 			break;
 		}
@@ -952,12 +956,14 @@ template <typename T> inline void safe_delete(const std::shared_ptr<data_exp<T>>
 		}
 
 		if (dexps_r.empty())
-			safe_delete(data);
+			safe_delete(data); //for question_exp, recursion still happens at here, any ideas?
 		else
 		{
+			//for question_exp, recursion still happens at here, any ideas?
 			safe_delete(dexps_r.back()->get_2nd_data());
 			for (auto iter2 = dexps_r.rbegin(); iter2 != dexps_r.rend(); ++iter2)
 			{
+				//if the left leaf is a binary_data_exp or question_exp, recursion still happens at here, any ideas?
 				safe_delete((*iter2)->get_1st_data());
 				(*iter2)->clear();
 			}
@@ -981,6 +987,7 @@ public:
 	virtual std::shared_ptr<judge_exp<T>> final_optimize() = 0;
 
 	virtual bool operator()(const std::function<T(const std::string&)>&) const = 0;
+	//is recursion fully eliminated or not depends on the data_exp(s) this judge_exp holds
 	virtual bool safe_execute(const std::function<T(const std::string&)>&) const = 0;
 	virtual void safe_delete() const = 0;
 };
@@ -1048,6 +1055,7 @@ template <typename T> inline bool safe_execute(const std::shared_ptr<judge_exp<T
 			auto circuit = false;
 			for (auto iter2 = std::begin(jexps_r); !circuit && iter2 != std::end(jexps_r); ++iter2)
 			{
+				//if the left leaf is a binary_judge_exp, recursion still happens at here, any ideas?
 				re = safe_execute((*iter2)->get_1st_judge(), cb);
 				lop = (*iter2)->get_operator();
 				if ("&&" == lop) //this if statement will impact efficiency, but we have no choice
@@ -1104,6 +1112,7 @@ template <typename T> inline void safe_delete(const std::shared_ptr<judge_exp<T>
 			jexps_r.back()->get_2nd_judge()->safe_delete();
 			for (auto iter2 = jexps_r.rbegin(); iter2 != jexps_r.rend(); ++iter2)
 			{
+				//if the left leaf is a binary_judge_exp, recursion still happens at here, any ideas?
 				safe_delete((*iter2)->get_1st_judge());
 				(*iter2)->clear();
 			}

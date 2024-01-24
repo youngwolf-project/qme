@@ -6,10 +6,14 @@ else
 	cflag += -O3 -DNDEBUG -s
 endif
 
-release debug :
-	${CXX} ${cflag} -o test_question_exp test_question_exp.cpp
+target = test_question_exp
+input = ${target}.cpp
+dep = question_exp.h
+release debug : ${target}
+${target} : ${input} ${dep}
+	${CXX} ${cflag} -o $@ $<
 
 .PHONY : clean
 clean:
-	-rm -rf test_question_exp
+	-rm -rf ${target}
 
