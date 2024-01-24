@@ -37,7 +37,7 @@ template<typename T> void execute_qme(cpu_timer& timer, const std::shared_ptr<qm
 	// qme::O0/qme::O1 to compile it,
 	// qme::safe_execute to execute it and
 	// qme::safe_delete to delete it,
-	// then no recursion will be introduced.
+	// then recursion will be suppressed (but not totally, see comments of safe_execute/safe_delete for more details).
 	//auto re = qme::safe_execute(exp, cb);
 	printf("spent %f seconds.\n", timer.elapsed());
 	++exec_succ;
@@ -264,7 +264,7 @@ int main(int argc, const char* argv[])
 			// qme::O0/qme::O1 to compile it,
 			// qme::safe_execute to execute it and
 			// qme::safe_delete to delete it,
-			// then no recursion will be introduced.
+			// then recursion will be suppressed (but not totally, see comments of safe_execute/safe_delete for more details).
 			//qme::safe_delete(exp);
 		}
 		putchar('\n');

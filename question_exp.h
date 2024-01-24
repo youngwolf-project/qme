@@ -858,8 +858,8 @@ private:
 // qme::O0/qme::O1 to compile it,
 // qme::safe_execute to execute it and
 // qme::safe_delete to delete it,
-// then no recursion will be introduced.
-//with optimization level O0, following functions are still available, if you're encountering above situation,
+// then recursion will be suppressed (but not totally).
+//with optimization level qme::O0/qme::O1, following functions are still available, if you're encountering above situation,
 // you should not call them manually, please note:
 // is_easy_to_negative
 // is_negative
@@ -997,8 +997,8 @@ public:
 // qme::O0/qme::O1 to compile it,
 // qme::safe_execute to execute it and
 // qme::safe_delete to delete it,
-// then no recursion will be introduced.
-//with optimization level O0, following functions are still available, if you're encountering above situation,
+// then recursion will be suppressed (but not totally).
+//with optimization level qme::O0/qme::O1, following functions are still available, if you're encountering above situation,
 // you should not call them manually, please note:
 // is_easy_to_negative
 // is_negative
@@ -1313,7 +1313,7 @@ public:
 	}
 
 	virtual bool safe_execute(const std::function<T(const std::string&)>&) const {throw("unsupported safe execute operation!");}
-	virtual void safe_delete() const {qme::safe_delete(jexp_l); qme::safe_delete(jexp_r);}
+	virtual void safe_delete() const {throw("unsupported safe delete operation!");}
 	virtual void clear() {jexp_l.reset(); jexp_r.reset();}
 
 protected:
