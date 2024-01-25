@@ -151,6 +151,12 @@ int main(int argc, const char* argv[])
 		{"a ? -1 / a / a : 0", -.0001f, -.0001f},
 		{"a ? -(b ? b : c) : 0", -1.f, 1.f},
 
+		//test safe_execute/safe_delete, some complicated expressions (use qme::O0 to compile them to keep the complexity)
+		{"1 + (2 + (3 + 4 + 5) + 6)", 21.f, 21.f},
+		{"1 + (2 + (3 + (4 + (5 + 6))))", 21.f, 21.f},
+		{"1 + 2 + 3 + 4 + 5 + 6", 21.f, 21.f},
+		{"1 + (2 + (3 + (4 + (5 + 6)))) + 7 + 8 + 9", 45.f, 45.f},
+
 		//following expressions are supposed to be invalid:
 		{"!a"},
 		{"?a"},

@@ -8,7 +8,7 @@ Recursion is used during the whole compilation and execution, so please carefull
 qme::O0/qme::O1 to compile it,</br>
 qme::safe_execute to execute it and</br>
 qme::safe_delete to delete it,</br>
-then recursion will be suppressed (but not totally, see comments of safe_execute/safe_delete for more details).
+then no recursion will be introduced (except question mark expression used as sub expression).
 
 Quick start
 -

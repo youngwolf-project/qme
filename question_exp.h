@@ -858,7 +858,7 @@ private:
 // qme::O0/qme::O1 to compile it,
 // qme::safe_execute to execute it and
 // qme::safe_delete to delete it,
-// then recursion will be suppressed (but not totally).
+// then no recursion will be introduced (except question mark expression used as sub expression).
 //with optimization level qme::O0/qme::O1, following functions are still available, if you're encountering above situation,
 // you should not call them manually, please note:
 // is_easy_to_negative
@@ -878,49 +878,54 @@ template <typename T> inline T safe_execute(const std::shared_ptr<data_exp<T>>& 
 	else if (!dexp->is_composite())
 		return (*dexp)(cb);
 
-	immediate_data<T> re_l;
-	std::list<std::shared_ptr<data_exp<T>>> dexps;
-	for (auto data = dexp; true;)
-		if (data->is_composite())
+	std::list<std::pair<std::shared_ptr<data_exp<T>>, bool>> dexps; //true - left branch, false - right branch
+	dexps.push_back(std::make_pair(dexp, true));
+	std::list<immediate_data<T>> res;
+	auto direction = 0; //0 - left-bottom, 1 - right-bottom, 2 - top-left
+	for (auto iter = std::crbegin(dexps); iter != std::crend(dexps);)
+		if (0 == direction)
 		{
-			dexps.push_back(data);
-			data = data->get_1st_data();
-		}
-		else
-		{
-			//for question_exp, recursion still happens at here, any ideas?
-			re_l.merge_with('+', safe_execute(data, cb));
-			break;
-		}
-
-	for (auto iter = dexps.rbegin(); iter != dexps.rend(); ++iter)
-	{
-		std::list<std::shared_ptr<data_exp<T>>> dexps_r;
-		auto data = (*iter)->get_2nd_data();
-		while (data->is_composite())
-		{
-			dexps_r.push_back(data);
-			data = data->get_2nd_data();
-		}
-
-		if (dexps_r.empty())
-			re_l.merge_with((*iter)->get_operator(), safe_execute(data, cb)); //for question_exp, recursion still happens at here, any ideas?
-		else
-		{
-			//for question_exp, recursion still happens at here, any ideas?
-			auto re_r = safe_execute(dexps_r.back()->get_2nd_data(), cb);
-			for (auto iter2 = dexps_r.rbegin(); iter2 != dexps_r.rend(); ++iter2)
+			auto data = iter->first->get_1st_data();
+			if (data->is_composite())
 			{
-				//if the left leaf is a binary_data_exp or question_exp, recursion still happens at here, any ideas?
-				immediate_data<T> re_l(safe_execute((*iter2)->get_1st_data(), cb));
-				re_l.merge_with((*iter2)->get_operator(), re_r);
-				re_r = re_l.get_immediate_value();
+				dexps.push_back(std::make_pair(data, true));
+				iter = std::crbegin(dexps);
 			}
-			re_l.merge_with((*iter)->get_operator(), re_r);
+			else
+			{
+				res.push_back(immediate_data<T>(safe_execute(data, cb))); //for question_exp, recursion still happens at here
+				direction = 1;
+			}
 		}
-	}
+		else if (1 == direction)
+		{
+			auto data = iter->first->get_2nd_data();
+			if (data->is_composite())
+			{
+				dexps.push_back(std::make_pair(data, false));
+				iter = std::crbegin(dexps);
+				direction = 0;
+			}
+			else
+			{
+				res.push_back(immediate_data<T>(safe_execute(data, cb))); //for question_exp, recursion still happens at here
+				direction = 2;
+			}
+		}
+		else // 2 == direction
+		{
+			auto re = res.back().get_immediate_value();
+			res.pop_back();
+			res.back().merge_with(iter->first->get_operator(), re);
 
-	return re_l.get_immediate_value();
+			if (iter++->second)
+			{
+				direction = 1;
+				iter = decltype(iter)(dexps.erase(iter.base(), std::end(dexps)));
+			}
+		}
+
+	return res.front().get_immediate_value();
 }
 
 template <typename T> inline void safe_delete(const std::shared_ptr<data_exp<T>>& dexp)
@@ -931,46 +936,48 @@ template <typename T> inline void safe_delete(const std::shared_ptr<data_exp<T>>
 	else if (!dexp->is_composite())
 		return;
 
-	std::list<std::shared_ptr<data_exp<T>>> dexps;
-	for (auto data = dexp; true;)
-		if (data->is_composite())
+	std::list<std::pair<std::shared_ptr<data_exp<T>>, bool>> dexps; //true - left branch, false - right branch
+	dexps.push_back(std::make_pair(dexp, true));
+	auto direction = 0; //0 - left-bottom, 1 - right-bottom, 2 - top-left
+	for (auto iter = std::crbegin(dexps); iter != std::crend(dexps);)
+		if (0 == direction)
 		{
-			dexps.push_back(data);
-			data = data->get_1st_data();
-		}
-		else
-		{
-			//for question_exp, recursion still happens at here, any ideas?
-			safe_delete(data);
-			break;
-		}
-
-	for (auto iter = dexps.rbegin(); iter != dexps.rend(); ++iter)
-	{
-		std::list<std::shared_ptr<data_exp<T>>> dexps_r;
-		auto data = (*iter)->get_2nd_data();
-		while (data->is_composite())
-		{
-			dexps_r.push_back(data);
-			data = data->get_2nd_data();
-		}
-
-		if (dexps_r.empty())
-			safe_delete(data); //for question_exp, recursion still happens at here, any ideas?
-		else
-		{
-			//for question_exp, recursion still happens at here, any ideas?
-			safe_delete(dexps_r.back()->get_2nd_data());
-			for (auto iter2 = dexps_r.rbegin(); iter2 != dexps_r.rend(); ++iter2)
+			auto data = iter->first->get_1st_data();
+			if (data->is_composite())
 			{
-				//if the left leaf is a binary_data_exp or question_exp, recursion still happens at here, any ideas?
-				safe_delete((*iter2)->get_1st_data());
-				(*iter2)->clear();
+				dexps.push_back(std::make_pair(data, true));
+				iter = std::crbegin(dexps);
+			}
+			else
+			{
+				safe_delete(data); //for question_exp, recursion still happens at here
+				direction = 1;
 			}
 		}
-
-		(*iter)->clear();
-	}
+		else if (1 == direction)
+		{
+			auto data = iter->first->get_2nd_data();
+			if (data->is_composite())
+			{
+				dexps.push_back(std::make_pair(data, false));
+				iter = std::crbegin(dexps);
+				direction = 0;
+			}
+			else
+			{
+				safe_delete(data); //for question_exp, recursion still happens at here
+				direction = 2;
+			}
+		}
+		else // 2 == direction
+		{
+			iter->first->clear();
+			if (iter++->second)
+			{
+				direction = 1;
+				iter = decltype(iter)(dexps.erase(iter.base(), std::end(dexps)));
+			}
+		}
 }
 /////////////////////////////////////////////////////////////////////////////////////////
 
@@ -997,7 +1004,7 @@ public:
 // qme::O0/qme::O1 to compile it,
 // qme::safe_execute to execute it and
 // qme::safe_delete to delete it,
-// then recursion will be suppressed (but not totally).
+// then no recursion will be introduced (except question mark expression used as sub expression).
 //with optimization level qme::O0/qme::O1, following functions are still available, if you're encountering above situation,
 // you should not call them manually, please note:
 // is_easy_to_negative
@@ -1010,116 +1017,119 @@ public:
 // to_negative
 template <typename T> inline bool safe_execute(const std::shared_ptr<judge_exp<T>>& jexp, const std::function<T(const std::string&)>& cb)
 {
+	if (!jexp->is_composite())
+		return jexp->safe_execute(cb);
+
+	std::list<std::pair<std::shared_ptr<judge_exp<T>>, bool>> jexps; //true - left branch, false - right branch
+	jexps.push_back(std::make_pair(jexp, true));
 	auto re = false;
-	std::list<std::shared_ptr<judge_exp<T>>> jexps;
-	for (auto judge = jexp; true;)
-		if (judge->is_composite())
+	auto direction = 0; //0 - left-bottom, 1 - right-bottom, 2 - top-left
+	for (auto iter = std::crbegin(jexps); iter != std::crend(jexps);)
+		if (0 == direction)
 		{
-			jexps.push_back(judge);
-			judge = judge->get_1st_judge();
-		}
-		else
-		{
-			re = judge->safe_execute(cb);
-			break;
-		}
-
-	for (auto iter = jexps.rbegin(); iter != jexps.rend(); ++iter)
-	{
-		auto lop = (*iter)->get_operator();
-		if ("&&" == lop) //this if statement will impact efficiency, but we have no choice
-		{
-			if (!re)
-				continue;
-		}
-		else if ("||" == lop)
-		{
-			if (re)
-				continue;
-		}
-		else
-			throw("undefined logical operator " + lop);
-
-		std::list<std::shared_ptr<judge_exp<T>>> jexps_r;
-		auto judge = (*iter)->get_2nd_judge();
-		while (judge->is_composite())
-		{
-			jexps_r.push_back(judge);
-			judge = judge->get_2nd_judge();
-		}
-
-		if (jexps_r.empty())
-			re = judge->safe_execute(cb);
-		else
-		{
-			auto circuit = false;
-			for (auto iter2 = std::begin(jexps_r); !circuit && iter2 != std::end(jexps_r); ++iter2)
+			auto judge = iter->first->get_1st_judge();
+			if (judge->is_composite())
 			{
-				//if the left leaf is a binary_judge_exp, recursion still happens at here, any ideas?
-				re = safe_execute((*iter2)->get_1st_judge(), cb);
-				lop = (*iter2)->get_operator();
-				if ("&&" == lop) //this if statement will impact efficiency, but we have no choice
-				{
-					if (!re)
-						circuit = true;
-				}
-				else if ("||" == lop)
-				{
-					if (re)
-						circuit = true;
-				}
-				else
-					throw("undefined logical operator " + lop);
+				jexps.push_back(std::make_pair(judge, true));
+				iter = std::crbegin(jexps);
 			}
-
-			if (!circuit)
-				re = jexps_r.back()->get_2nd_judge()->safe_execute(cb);
+			else
+			{
+				re = judge->safe_execute(cb);
+				direction = 1;
+			}
 		}
-	}
+		else if (1 == direction)
+		{
+			auto& lop = iter->first->get_operator();
+			if ("&&" == lop) //this if statement will impact efficiency, but we have no choice
+			{
+				if (!re)
+				{
+					direction = 2;
+					continue;
+				}
+			}
+			else if ("||" == lop)
+			{
+				if (re)
+				{
+					direction = 2;
+					continue;
+				}
+			}
+			else
+				throw("undefined logical operator " + lop);
+
+			auto judge = iter->first->get_2nd_judge();
+			if (judge->is_composite())
+			{
+				jexps.push_back(std::make_pair(judge, false));
+				iter = std::crbegin(jexps);
+				direction = 0;
+			}
+			else
+			{
+				re = judge->safe_execute(cb);
+				direction = 2;
+			}
+		}
+		else if (iter++->second) // 2 == direction
+		{
+			direction = 1;
+			iter = decltype(iter)(jexps.erase(iter.base(), std::end(jexps)));
+		}
 
 	return re;
 }
 
 template <typename T> inline void safe_delete(const std::shared_ptr<judge_exp<T>>& jexp)
 {
-	std::list<std::shared_ptr<judge_exp<T>>> jexps;
-	for (auto judge = jexp; true;)
-		if (judge->is_composite())
-		{
-			jexps.push_back(judge);
-			judge = judge->get_1st_judge();
-		}
-		else
-		{
-			judge->safe_delete();
-			break;
-		}
+	if (!jexp->is_composite())
+		return jexp->safe_delete();
 
-	for (auto iter = jexps.rbegin(); iter != jexps.rend(); ++iter)
-	{
-		std::list<std::shared_ptr<judge_exp<T>>> jexps_r;
-		auto judge = (*iter)->get_2nd_judge();
-		while (judge->is_composite())
+	std::list<std::pair<std::shared_ptr<judge_exp<T>>, bool>> jexps; //true - left branch, false - right branch
+	jexps.push_back(std::make_pair(jexp, true));
+	auto direction = 0; //0 - left-bottom, 1 - right-bottom, 2 - top-left
+	for (auto iter = std::crbegin(jexps); iter != std::crend(jexps);)
+		if (0 == direction)
 		{
-			jexps_r.push_back(judge);
-			judge = judge->get_2nd_judge();
-		}
-
-		if (jexps_r.empty())
-			judge->safe_delete();
-		else
-		{
-			jexps_r.back()->get_2nd_judge()->safe_delete();
-			for (auto iter2 = jexps_r.rbegin(); iter2 != jexps_r.rend(); ++iter2)
+			auto judge = iter->first->get_1st_judge();
+			if (judge->is_composite())
 			{
-				//if the left leaf is a binary_judge_exp, recursion still happens at here, any ideas?
-				safe_delete((*iter2)->get_1st_judge());
-				(*iter2)->clear();
+				jexps.push_back(std::make_pair(judge, true));
+				iter = std::crbegin(jexps);
+			}
+			else
+			{
+				judge->safe_delete();
+				direction = 1;
 			}
 		}
-
-		(*iter)->clear();
-	}
+		else if (1 == direction)
+		{
+			auto judge = iter->first->get_2nd_judge();
+			if (judge->is_composite())
+			{
+				jexps.push_back(std::make_pair(judge, false));
+				iter = std::crbegin(jexps);
+				direction = 0;
+			}
+			else
+			{
+				judge->safe_delete();
+				direction = 2;
+			}
+		}
+		else // 2 == direction
+		{
+			iter->first->clear();
+			if (iter++->second)
+			{
+				direction = 1;
+				iter = decltype(iter)(jexps.erase(iter.base(), std::end(jexps)));
+			}
+		}
 }
 
 template <typename T> class unitary_judge_exp : public judge_exp<T>
