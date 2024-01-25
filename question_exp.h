@@ -912,7 +912,7 @@ template <typename T> inline T safe_execute(const std::shared_ptr<data_exp<T>>& 
 				direction = 2;
 			}
 		}
-		else // 2 == direction
+		else //2 == direction
 		{
 			auto re = res.back().get_immediate_value();
 			res.pop_back();
@@ -969,7 +969,7 @@ template <typename T> inline void safe_delete(const std::shared_ptr<data_exp<T>>
 				direction = 2;
 			}
 		}
-		else // 2 == direction
+		else //2 == direction
 		{
 			iter->first->clear();
 			if (iter++->second)
@@ -1045,36 +1045,33 @@ template <typename T> inline bool safe_execute(const std::shared_ptr<judge_exp<T
 			if ("&&" == lop) //this if statement will impact efficiency, but we have no choice
 			{
 				if (!re)
-				{
 					direction = 2;
-					continue;
-				}
 			}
 			else if ("||" == lop)
 			{
 				if (re)
-				{
 					direction = 2;
-					continue;
-				}
 			}
 			else
 				throw("undefined logical operator " + lop);
 
-			auto judge = iter->first->get_2nd_judge();
-			if (judge->is_composite())
+			if (1 == direction)
 			{
-				jexps.push_back(std::make_pair(judge, false));
-				iter = std::crbegin(jexps);
-				direction = 0;
-			}
-			else
-			{
-				re = judge->safe_execute(cb);
-				direction = 2;
+				auto judge = iter->first->get_2nd_judge();
+				if (judge->is_composite())
+				{
+					jexps.push_back(std::make_pair(judge, false));
+					iter = std::crbegin(jexps);
+					direction = 0;
+				}
+				else
+				{
+					re = judge->safe_execute(cb);
+					direction = 2;
+				}
 			}
 		}
-		else if (iter++->second) // 2 == direction
+		else if (iter++->second) //2 == direction
 		{
 			direction = 1;
 			iter = decltype(iter)(jexps.erase(iter.base(), std::end(jexps)));
@@ -1121,7 +1118,7 @@ template <typename T> inline void safe_delete(const std::shared_ptr<judge_exp<T>
 				direction = 2;
 			}
 		}
-		else // 2 == direction
+		else //2 == direction
 		{
 			iter->first->clear();
 			if (iter++->second)
