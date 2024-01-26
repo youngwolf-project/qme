@@ -86,6 +86,7 @@ protected:
 public:
 	virtual bool is_data() const {return false;}
 	virtual bool is_judge() const {return false;}
+	virtual bool is_composite() const {return false;}
 	virtual int get_depth() const {return 1;}
 	virtual void show_immediate_value() const {}
 	virtual void clear() {}
@@ -97,7 +98,6 @@ template <typename T> class data_exp : public exp
 public:
 	virtual bool is_data() const {return true;}
 	virtual bool is_immediate() const {return false;}
-	virtual bool is_composite() const {return false;}
 	virtual bool is_composite_variable() const {return false;}
 	//whether this expression can be transformed to negative
 	// 1 - without introducing negation operations, for example 2 * a to -2 *a
@@ -987,7 +987,6 @@ template <typename T> class judge_exp : public exp
 {
 public:
 	virtual bool is_judge() const {return true;}
-	virtual bool is_composite() const {return false;}
 	virtual const std::string& get_operator() const {throw("unsupported get operator operation!");}
 	virtual std::shared_ptr<judge_exp<T>> get_1st_judge() const {throw("unsupported get 1st judge operation!");}
 	virtual std::shared_ptr<judge_exp<T>> get_2nd_judge() const {throw("unsupported get 2nd judge operation!");}
