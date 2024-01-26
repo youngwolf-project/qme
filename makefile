@@ -1,5 +1,5 @@
 
-cflag = -Wall -fexceptions
+cflag = -Wall -fexceptions -std=c++0x
 ifeq (${MAKECMDGOALS}, debug)
 	cflag += -g -DDEBUG
 else

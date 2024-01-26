@@ -883,14 +883,14 @@ template <typename T> inline T safe_execute(const std::shared_ptr<data_exp<T>>& 
 	dexps.push_back(std::make_pair(dexp, true));
 	std::list<immediate_data<T>> res;
 	auto direction = 0; //0 - left-bottom, 1 - right-bottom, 2 - top-left
-	for (auto iter = std::crbegin(dexps); iter != std::crend(dexps);)
+	for (auto iter = dexps.crbegin(); iter != dexps.crend();)
 		if (0 == direction)
 		{
 			auto data = iter->first->get_1st_data();
 			if (data->is_composite())
 			{
 				dexps.push_back(std::make_pair(data, true));
-				iter = std::crbegin(dexps);
+				iter = dexps.crbegin();
 			}
 			else
 			{
@@ -904,7 +904,7 @@ template <typename T> inline T safe_execute(const std::shared_ptr<data_exp<T>>& 
 			if (data->is_composite())
 			{
 				dexps.push_back(std::make_pair(data, false));
-				iter = std::crbegin(dexps);
+				iter = dexps.crbegin();
 				direction = 0;
 			}
 			else
@@ -940,14 +940,14 @@ template <typename T> inline void safe_delete(const std::shared_ptr<data_exp<T>>
 	std::list<std::pair<std::shared_ptr<data_exp<T>>, bool>> dexps; //true - left branch, false - right branch
 	dexps.push_back(std::make_pair(dexp, true));
 	auto direction = 0; //0 - left-bottom, 1 - right-bottom, 2 - top-left
-	for (auto iter = std::crbegin(dexps); iter != std::crend(dexps);)
+	for (auto iter = dexps.crbegin(); iter != dexps.crend();)
 		if (0 == direction)
 		{
 			auto data = iter->first->get_1st_data();
 			if (data->is_composite())
 			{
 				dexps.push_back(std::make_pair(data, true));
-				iter = std::crbegin(dexps);
+				iter = dexps.crbegin();
 			}
 			else
 			{
@@ -961,7 +961,7 @@ template <typename T> inline void safe_delete(const std::shared_ptr<data_exp<T>>
 			if (data->is_composite())
 			{
 				dexps.push_back(std::make_pair(data, false));
-				iter = std::crbegin(dexps);
+				iter = dexps.crbegin();
 				direction = 0;
 			}
 			else
@@ -1024,14 +1024,14 @@ template <typename T> inline bool safe_execute(const std::shared_ptr<judge_exp<T
 	jexps.push_back(std::make_pair(jexp, true));
 	auto re = false;
 	auto direction = 0; //0 - left-bottom, 1 - right-bottom, 2 - top-left
-	for (auto iter = std::crbegin(jexps); iter != std::crend(jexps);)
+	for (auto iter = jexps.crbegin(); iter != jexps.crend();)
 		if (0 == direction)
 		{
 			auto judge = iter->first->get_1st_judge();
 			if (judge->is_composite())
 			{
 				jexps.push_back(std::make_pair(judge, true));
-				iter = std::crbegin(jexps);
+				iter = jexps.crbegin();
 			}
 			else
 			{
@@ -1056,7 +1056,7 @@ template <typename T> inline bool safe_execute(const std::shared_ptr<judge_exp<T
 				if (judge->is_composite())
 				{
 					jexps.push_back(std::make_pair(judge, false));
-					iter = std::crbegin(jexps);
+					iter = jexps.crbegin();
 					direction = 0;
 				}
 				else
@@ -1083,14 +1083,14 @@ template <typename T> inline void safe_delete(const std::shared_ptr<judge_exp<T>
 	std::list<std::pair<std::shared_ptr<judge_exp<T>>, bool>> jexps; //true - left branch, false - right branch
 	jexps.push_back(std::make_pair(jexp, true));
 	auto direction = 0; //0 - left-bottom, 1 - right-bottom, 2 - top-left
-	for (auto iter = std::crbegin(jexps); iter != std::crend(jexps);)
+	for (auto iter = jexps.crbegin(); iter != jexps.crend();)
 		if (0 == direction)
 		{
 			auto judge = iter->first->get_1st_judge();
 			if (judge->is_composite())
 			{
 				jexps.push_back(std::make_pair(judge, true));
-				iter = std::crbegin(jexps);
+				iter = jexps.crbegin();
 			}
 			else
 			{
@@ -1104,7 +1104,7 @@ template <typename T> inline void safe_delete(const std::shared_ptr<judge_exp<T>
 			if (judge->is_composite())
 			{
 				jexps.push_back(std::make_pair(judge, false));
-				iter = std::crbegin(jexps);
+				iter = jexps.crbegin();
 				direction = 0;
 			}
 			else
