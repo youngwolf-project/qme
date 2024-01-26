@@ -12,8 +12,7 @@ then no recursion will be introduced (except question mark expression used as su
 
 Quick start
 -
-Execute make or make debug, if compilation error occurs, try to add -std=c++11 option.</br>
-Then execute ./test_question_exp
+Execute make or make debug, then execute ./test_question_exp
 
 Example:
 -
