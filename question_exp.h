@@ -80,9 +80,10 @@ inline bool is_key_2(const std::string& input) {return is_key_2(input.data());}
 
 class exp
 {
-public:
+protected:
 	virtual ~exp() {}
 
+public:
 	virtual bool is_data() const {return false;}
 	virtual bool is_judge() const {return false;}
 	virtual int get_depth() const {return 1;}
@@ -148,10 +149,11 @@ template <typename T> inline bool is_divisible(T dividend, T divisor)
 
 template <typename T, typename O> class binary_data_exp : public data_exp<T>
 {
-public:
+protected:
 	binary_data_exp(const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r, char _op) :
 		op(_op), dexp_l(_dexp_l), dexp_r(_dexp_r) {}
 
+public:
 	virtual bool is_composite() const {return true;}
 	virtual bool is_easy_to_negative() const
 		{return is_negative() || (is_operator_2(op) && (dexp_l->is_easy_to_negative() || dexp_r->is_easy_to_negative()));}
@@ -823,6 +825,8 @@ public:
 	immediate_data(T v) : value(v) {}
 
 	T get_immediate_value() const {return value;}
+	operator T() const {return value;}
+	bool merge_with(char other_op, const immediate_data<T>& other_data) {return merge_with(other_op, (T) other_data);}
 	bool merge_with(char other_op, T v)
 	{
 		switch (other_op) //this switch statement will impact efficiency, but we have no choice
@@ -840,9 +844,6 @@ public:
 			if (0 == v)
 				throw("divide zero");
 			value /= v;
-			break;
-		default:
-			throw("undefined operator " + std::string(1, other_op));
 			break;
 		}
 
@@ -914,7 +915,7 @@ template <typename T> inline T safe_execute(const std::shared_ptr<data_exp<T>>& 
 		}
 		else //2 == direction
 		{
-			auto re = res.back().get_immediate_value();
+			T re = res.back();
 			res.pop_back();
 			res.back().merge_with(iter->first->get_operator(), re);
 
@@ -925,7 +926,7 @@ template <typename T> inline T safe_execute(const std::shared_ptr<data_exp<T>>& 
 			}
 		}
 
-	return res.front().get_immediate_value();
+	return res.front();
 }
 
 template <typename T> inline void safe_delete(const std::shared_ptr<data_exp<T>>& dexp)
@@ -1047,13 +1048,8 @@ template <typename T> inline bool safe_execute(const std::shared_ptr<judge_exp<T
 				if (!re)
 					direction = 2;
 			}
-			else if ("||" == lop)
-			{
-				if (re)
-					direction = 2;
-			}
-			else
-				throw("undefined logical operator " + lop);
+			else if (re) //"||" == lop
+				direction = 2;
 
 			if (1 == direction)
 			{
@@ -1131,9 +1127,10 @@ template <typename T> inline void safe_delete(const std::shared_ptr<judge_exp<T>
 
 template <typename T> class unitary_judge_exp : public judge_exp<T>
 {
-public:
+protected:
 	unitary_judge_exp(const std::shared_ptr<data_exp<T>>& _dexp) : dexp(_dexp) {}
 
+public:
 	virtual int get_depth() const {return 1 + dexp->get_depth();}
 	virtual void show_immediate_value() const {dexp->show_immediate_value();}
 	virtual std::shared_ptr<judge_exp<T>> final_optimize()
@@ -1171,10 +1168,11 @@ public:
 
 template <typename T> class binary_judge_exp : public judge_exp<T>
 {
-public:
+protected:
 	binary_judge_exp(const std::shared_ptr<data_exp<T>>& _dexp_l, const std::shared_ptr<data_exp<T>>& _dexp_r) :
 		dexp_l(_dexp_l), dexp_r(_dexp_r) {}
 
+public:
 	virtual int get_depth() const {return 1 + std::max(dexp_l->get_depth(), dexp_r->get_depth());}
 	virtual void show_immediate_value() const {dexp_l->show_immediate_value(); dexp_r->show_immediate_value();}
 	virtual std::shared_ptr<judge_exp<T>> final_optimize()
@@ -1300,10 +1298,11 @@ private:
 
 template <typename T> class logical_exp : public judge_exp<T>
 {
-public:
+protected:
 	logical_exp(const std::shared_ptr<judge_exp<T>>& _jexp_l, const std::shared_ptr<judge_exp<T>>& _jexp_r, const std::string& _lop) :
 		lop(_lop), jexp_l(_jexp_l), jexp_r(_jexp_r) {}
 
+public:
 	virtual bool is_composite() const {return true;}
 	virtual const std::string& get_operator() const {return lop;}
 	virtual std::shared_ptr<judge_exp<T>> get_1st_judge() const {return jexp_l;}
