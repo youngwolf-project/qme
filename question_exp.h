@@ -760,7 +760,7 @@ template <typename T, typename O> inline std::shared_ptr<data_exp<T>> merge_data
 		auto data = dexp_r->trim_myself();
 		return data ? data : dexp_r;
 	}
-	else if (dexp_l->merge_with(op, dexp_r)) //composite_variable_data_exp is involved at here
+	else if (dexp_l->merge_with(op, dexp_r)) //composite_variable_data_exp is involved here
 	{
 		auto data = dexp_l->trim_myself();
 		return data ? data : dexp_l;
@@ -880,7 +880,7 @@ template <typename T> inline T safe_execute(const std::shared_ptr<data_exp<T>>& 
 		return (*dexp)(cb);
 
 	std::list<std::pair<std::shared_ptr<data_exp<T>>, bool>> dexps; //true - left branch, false - right branch
-	dexps.push_back(std::make_pair(dexp, true));
+	dexps.emplace_back(dexp, true);
 	std::list<immediate_data<T>> res;
 	auto direction = 0; //0 - left-bottom, 1 - right-bottom, 2 - top-left
 	for (auto iter = dexps.crbegin(); iter != dexps.crend();)
@@ -889,12 +889,12 @@ template <typename T> inline T safe_execute(const std::shared_ptr<data_exp<T>>& 
 			auto data = iter->first->get_1st_data();
 			if (data->is_composite())
 			{
-				dexps.push_back(std::make_pair(data, true));
+				dexps.emplace_back(data, true);
 				iter = dexps.crbegin();
 			}
 			else
 			{
-				res.push_back(immediate_data<T>(safe_execute(data, cb))); //for question_exp, recursion still happens at here
+				res.emplace_back(safe_execute(data, cb)); //for question_exp, recursion still happens here
 				direction = 1;
 			}
 		}
@@ -903,13 +903,13 @@ template <typename T> inline T safe_execute(const std::shared_ptr<data_exp<T>>& 
 			auto data = iter->first->get_2nd_data();
 			if (data->is_composite())
 			{
-				dexps.push_back(std::make_pair(data, false));
+				dexps.emplace_back(data, false);
 				iter = dexps.crbegin();
 				direction = 0;
 			}
 			else
 			{
-				res.push_back(immediate_data<T>(safe_execute(data, cb))); //for question_exp, recursion still happens at here
+				res.emplace_back(safe_execute(data, cb)); //for question_exp, recursion still happens here
 				direction = 2;
 			}
 		}
@@ -938,7 +938,7 @@ template <typename T> inline void safe_delete(const std::shared_ptr<data_exp<T>>
 		return;
 
 	std::list<std::pair<std::shared_ptr<data_exp<T>>, bool>> dexps; //true - left branch, false - right branch
-	dexps.push_back(std::make_pair(dexp, true));
+	dexps.emplace_back(dexp, true);
 	auto direction = 0; //0 - left-bottom, 1 - right-bottom, 2 - top-left
 	for (auto iter = dexps.crbegin(); iter != dexps.crend();)
 		if (0 == direction)
@@ -946,12 +946,12 @@ template <typename T> inline void safe_delete(const std::shared_ptr<data_exp<T>>
 			auto data = iter->first->get_1st_data();
 			if (data->is_composite())
 			{
-				dexps.push_back(std::make_pair(data, true));
+				dexps.emplace_back(data, true);
 				iter = dexps.crbegin();
 			}
 			else
 			{
-				safe_delete(data); //for question_exp, recursion still happens at here
+				safe_delete(data); //for question_exp, recursion still happens here
 				direction = 1;
 			}
 		}
@@ -960,13 +960,13 @@ template <typename T> inline void safe_delete(const std::shared_ptr<data_exp<T>>
 			auto data = iter->first->get_2nd_data();
 			if (data->is_composite())
 			{
-				dexps.push_back(std::make_pair(data, false));
+				dexps.emplace_back(data, false);
 				iter = dexps.crbegin();
 				direction = 0;
 			}
 			else
 			{
-				safe_delete(data); //for question_exp, recursion still happens at here
+				safe_delete(data); //for question_exp, recursion still happens here
 				direction = 2;
 			}
 		}
@@ -1021,7 +1021,7 @@ template <typename T> inline bool safe_execute(const std::shared_ptr<judge_exp<T
 		return jexp->safe_execute(cb);
 
 	std::list<std::pair<std::shared_ptr<judge_exp<T>>, bool>> jexps; //true - left branch, false - right branch
-	jexps.push_back(std::make_pair(jexp, true));
+	jexps.emplace_back(jexp, true);
 	auto re = false;
 	auto direction = 0; //0 - left-bottom, 1 - right-bottom, 2 - top-left
 	for (auto iter = jexps.crbegin(); iter != jexps.crend();)
@@ -1030,7 +1030,7 @@ template <typename T> inline bool safe_execute(const std::shared_ptr<judge_exp<T
 			auto judge = iter->first->get_1st_judge();
 			if (judge->is_composite())
 			{
-				jexps.push_back(std::make_pair(judge, true));
+				jexps.emplace_back(judge, true);
 				iter = jexps.crbegin();
 			}
 			else
@@ -1055,7 +1055,7 @@ template <typename T> inline bool safe_execute(const std::shared_ptr<judge_exp<T
 				auto judge = iter->first->get_2nd_judge();
 				if (judge->is_composite())
 				{
-					jexps.push_back(std::make_pair(judge, false));
+					jexps.emplace_back(judge, false);
 					iter = jexps.crbegin();
 					direction = 0;
 				}
@@ -1081,7 +1081,7 @@ template <typename T> inline void safe_delete(const std::shared_ptr<judge_exp<T>
 		return jexp->safe_delete();
 
 	std::list<std::pair<std::shared_ptr<judge_exp<T>>, bool>> jexps; //true - left branch, false - right branch
-	jexps.push_back(std::make_pair(jexp, true));
+	jexps.emplace_back(jexp, true);
 	auto direction = 0; //0 - left-bottom, 1 - right-bottom, 2 - top-left
 	for (auto iter = jexps.crbegin(); iter != jexps.crend();)
 		if (0 == direction)
@@ -1089,7 +1089,7 @@ template <typename T> inline void safe_delete(const std::shared_ptr<judge_exp<T>
 			auto judge = iter->first->get_1st_judge();
 			if (judge->is_composite())
 			{
-				jexps.push_back(std::make_pair(judge, true));
+				jexps.emplace_back(judge, true);
 				iter = jexps.crbegin();
 			}
 			else
@@ -1103,7 +1103,7 @@ template <typename T> inline void safe_delete(const std::shared_ptr<judge_exp<T>
 			auto judge = iter->first->get_2nd_judge();
 			if (judge->is_composite())
 			{
-				jexps.push_back(std::make_pair(judge, false));
+				jexps.emplace_back(judge, false);
 				iter = jexps.crbegin();
 				direction = 0;
 			}
@@ -1696,21 +1696,21 @@ private:
 			if (is_key_2(input))
 			{
 				if (start < input)
-					items.push_back(std::string(start, input - start));
+					items.emplace_back(start, input - start);
 
-				items.push_back(std::string(input++, 2));
+				items.emplace_back(input++, 2);
 				start = input + 1;
 			}
 			else if (is_key_1(input))
 			{
 				if (start < input)
-					items.push_back(std::string(start, input - start));
+					items.emplace_back(start, input - start);
 
-				items.push_back(std::string(input, 1));
+				items.emplace_back(input, 1);
 				start = input + 1;
 			}
 		if (start < input)
-			items.push_back(std::string(start, input - start));
+			items.emplace_back(start, input - start);
 
 		return items;
 	}
