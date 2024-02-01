@@ -109,8 +109,8 @@ public:
 	virtual T get_immediate_value() const {throw("unsupported get immediate value operation!");}
 	virtual const std::string& get_variable_name() const {throw("unsupported get variable name operation!");}
 	virtual char get_operator() const {throw("unsupported get operator operation!");}
-	virtual std::shared_ptr<data_exp<T>> get_1st_data() const {throw("unsupported get 1st data operation!");}
-	virtual std::shared_ptr<data_exp<T>> get_2nd_data() const {throw("unsupported get 2nd data operation!");}
+	virtual std::shared_ptr<data_exp<T>> get_left_item() const {throw("unsupported get left item operation!");}
+	virtual std::shared_ptr<data_exp<T>> get_right_item() const {throw("unsupported get right item operation!");}
 
 	virtual bool merge_with(char, const std::shared_ptr<data_exp<T>>&) {return false;}
 	virtual bool merge_with(const std::shared_ptr<data_exp<T>>&, char) {return false;}
@@ -189,8 +189,8 @@ public:
 	}
 	virtual int get_depth() const {return 1 + std::max(dexp_l->get_depth(), dexp_r->get_depth());}
 	virtual char get_operator() const {return op;}
-	virtual std::shared_ptr<data_exp<T>> get_1st_data() const {return dexp_l;}
-	virtual std::shared_ptr<data_exp<T>> get_2nd_data() const {return dexp_r;}
+	virtual std::shared_ptr<data_exp<T>> get_left_item() const {return dexp_l;}
+	virtual std::shared_ptr<data_exp<T>> get_right_item() const {return dexp_r;}
 
 	virtual void show_immediate_value() const {dexp_l->show_immediate_value(); dexp_r->show_immediate_value();}
 	virtual bool merge_with(char other_op, const std::shared_ptr<data_exp<T>>& other_exp)
@@ -409,7 +409,7 @@ public:
 		binary_data_exp<T, O>(_dexp_l, _dexp_r, '+') {}
 
 	virtual T operator()(const std::function<T(const std::string&)>& cb) const
-		{return (*binary_data_exp<T, O>::get_1st_data())(cb) + (*binary_data_exp<T, O>::get_2nd_data())(cb);}
+		{return (*binary_data_exp<T, O>::get_left_item())(cb) + (*binary_data_exp<T, O>::get_right_item())(cb);}
 };
 
 template <typename T, typename O> class sub_data_exp : public binary_data_exp<T, O>
@@ -419,7 +419,7 @@ public:
 		binary_data_exp<T, O>(_dexp_l, _dexp_r, '-') {}
 
 	virtual T operator()(const std::function<T(const std::string&)>& cb) const
-		{return (*binary_data_exp<T, O>::get_1st_data())(cb) - (*binary_data_exp<T, O>::get_2nd_data())(cb);}
+		{return (*binary_data_exp<T, O>::get_left_item())(cb) - (*binary_data_exp<T, O>::get_right_item())(cb);}
 };
 
 template <typename T, typename O> class multi_data_exp : public binary_data_exp<T, O>
@@ -429,7 +429,7 @@ public:
 		binary_data_exp<T, O>(_dexp_l, _dexp_r, '*') {}
 
 	virtual T operator()(const std::function<T(const std::string&)>& cb) const
-		{return (*binary_data_exp<T, O>::get_1st_data())(cb) * (*binary_data_exp<T, O>::get_2nd_data())(cb);}
+		{return (*binary_data_exp<T, O>::get_left_item())(cb) * (*binary_data_exp<T, O>::get_right_item())(cb);}
 };
 
 template <typename T, typename O> class div_data_exp : public binary_data_exp<T, O>
@@ -441,13 +441,13 @@ public:
 	virtual T operator()(const std::function<T(const std::string&)>& cb) const
 	{
 #ifndef _MSC_VER //keep the order of data fetching for debuging
-		auto dividend = (*binary_data_exp<T, O>::get_1st_data())(cb);
+		auto dividend = (*binary_data_exp<T, O>::get_left_item())(cb);
 #endif
-		auto divisor = (*binary_data_exp<T, O>::get_2nd_data())(cb);
+		auto divisor = (*binary_data_exp<T, O>::get_right_item())(cb);
 		if (0 == divisor)
 			throw("divide zero");
 #ifdef _MSC_VER
-		return (*binary_data_exp<T, O>::get_1st_data())(cb) / divisor;
+		return (*binary_data_exp<T, O>::get_left_item())(cb) / divisor;
 #else
 		return dividend / divisor;
 #endif
@@ -771,7 +771,7 @@ template <typename T, typename O> inline std::shared_ptr<data_exp<T>> merge_data
 		if (is_same_operator_level<O>(op, op_2))
 		{
 			std::shared_ptr<data_exp<T>> data;
-			if (dexp_l->merge_with(op, dexp_r->get_1st_data()))
+			if (dexp_l->merge_with(op, dexp_r->get_left_item()))
 			{
 				data = dexp_l->trim_myself();
 				if (!data)
@@ -784,28 +784,28 @@ template <typename T, typename O> inline std::shared_ptr<data_exp<T>> merge_data
 				op_2 = '/' == op_2 ? '*' : '/';
 			if (!data)
 			{
-				if (dexp_l->merge_with(op_2, dexp_r->get_2nd_data()))
+				if (dexp_l->merge_with(op_2, dexp_r->get_right_item()))
 				{
 					data = dexp_l->trim_myself();
 					if (!data)
 						data = dexp_l;
-					return merge_data_exp<T, O>(data, dexp_r->get_1st_data(), op);
+					return merge_data_exp<T, O>(data, dexp_r->get_left_item(), op);
 				}
 				else
-					data = merge_data_exp<T, O>(dexp_l, dexp_r->get_1st_data(), op);
+					data = merge_data_exp<T, O>(dexp_l, dexp_r->get_left_item(), op);
 			}
 
-			return merge_data_exp<T, O>(data, dexp_r->get_2nd_data(), op_2);
+			return merge_data_exp<T, O>(data, dexp_r->get_right_item(), op_2);
 		}
 		else if (O::level() < 3 && '+' == op && '/' == op_2 && //'N1*a^M + N2*a^M / C' -> '(N1*C + N2)*a^M / C'
-			dexp_r->get_2nd_data()->is_immediate() && is_same_composite_variable(dexp_l, dexp_r->get_1st_data()) &&
-			dexp_l->get_exponent() == dexp_r->get_1st_data()->get_exponent())
+			dexp_r->get_right_item()->is_immediate() && is_same_composite_variable(dexp_l, dexp_r->get_left_item()) &&
+			dexp_l->get_exponent() == dexp_r->get_left_item()->get_exponent())
 		{
-			auto multiplier = dexp_l->get_multiplier() * dexp_r->get_2nd_data()->get_immediate_value() +
-				dexp_r->get_1st_data()->get_multiplier();
+			auto multiplier = dexp_l->get_multiplier() * dexp_r->get_right_item()->get_immediate_value() +
+				dexp_r->get_left_item()->get_multiplier();
 			return merge_data_exp<T, O>(
 				std::make_shared<composite_variable_data_exp<T, O>>(dexp_l->get_variable_name(), multiplier, dexp_l->get_exponent()),
-				dexp_r->get_2nd_data(), '/');
+				dexp_r->get_right_item(), '/');
 		}
 	}
 
@@ -816,6 +816,91 @@ template <typename T, typename O> inline std::shared_ptr<data_exp<T>> merge_data
 template <typename T, typename O> inline std::shared_ptr<data_exp<T>> merge_data_exp(
 	const std::shared_ptr<data_exp<T>>& dexp_l, const std::shared_ptr<data_exp<T>>& dexp_r, const std::string& op)
 	{return merge_data_exp<T, O>(dexp_l, dexp_r, op[0]);}
+
+//since recursion is used during the whole compilation and execution, if your expression is too complicated to
+// be compiled and executed (stack overflow), use
+// qme::O0/qme::O1 to compile it,
+// qme::safe_execute to execute it and
+// qme::safe_delete to delete it,
+// then no recursion will be introduced (except question mark expression used as sub expression).
+//with optimization level qme::O0/qme::O1, following functions are still available, if you're encountering above situation,
+// you should not call them manually, please note:
+// is_easy_to_negative
+// is_negative
+// get_depth
+// show_immediate_value
+// merge_with
+// trim_myself
+// final_optimize
+// to_negative
+template <typename T> inline int travel_exp(const T& exp,
+	const std::function<void(const T&)>& left_handler,
+	const std::function<bool(const T&)>& short_circuit_controller, //false - continue, true - backtrack
+	const std::function<void(const T&)>& right_handler,
+	const std::function<void(const T&)>& backtrack_handler)
+{
+	if (!exp->is_composite())
+		return 1;
+
+	auto depth = 1, max_depth = 0;
+	std::list<std::pair<T, bool>> exps; //true - left branch, false - right branch
+	exps.emplace_back(exp, true);
+	auto direction = 0; //0 - left-bottom, 1 - right-bottom, 2 - top-left
+	for (auto iter = exps.crbegin(); iter != exps.crend();)
+		if (0 == direction)
+		{
+			++depth;
+			auto left = iter->first->get_left_item();
+			if (left->is_composite())
+			{
+				exps.emplace_back(left, true);
+				iter = exps.crbegin();
+			}
+			else
+			{
+				left_handler(left);
+				direction = 1;
+				max_depth = std::max(depth--, max_depth);
+			}
+		}
+		else if (1 == direction)
+		{
+			++depth;
+			if (short_circuit_controller(iter->first))
+			{
+				direction = 2;
+				max_depth = std::max(depth--, max_depth);
+			}
+			else
+			{
+				auto right = iter->first->get_right_item();
+				if (right->is_composite())
+				{
+					exps.emplace_back(right, false);
+					iter = exps.crbegin();
+					direction = 0;
+				}
+				else
+				{
+					right_handler(right);
+					direction = 2;
+					max_depth = std::max(depth--, max_depth);
+				}
+			}
+		}
+		else //2 == direction
+		{
+			--depth;
+			backtrack_handler(iter->first);
+			if (iter++->second)
+			{
+				iter = decltype(iter)(exps.erase(iter.base(), std::end(exps)));
+				direction = 1;
+			}
+		}
+
+	return max_depth;
+}
 
 //used at execution time -- in safe_execute function
 template <typename T> class immediate_data
@@ -854,77 +939,26 @@ private:
 	T value;
 };
 
-//since recursion is used during the whole compilation and execution, if your expression is too complicated to
-// be compiled and executed (stack overflow), use
-// qme::O0/qme::O1 to compile it,
-// qme::safe_execute to execute it and
-// qme::safe_delete to delete it,
-// then no recursion will be introduced (except question mark expression used as sub expression).
-//with optimization level qme::O0/qme::O1, following functions are still available, if you're encountering above situation,
-// you should not call them manually, please note:
-// is_easy_to_negative
-// is_negative
-// get_depth
-// show_immediate_value
-// merge_with
-// trim_myself
-// final_optimize
-// to_negative
 template <typename T> class question_exp;
 template <typename T> inline T safe_execute(const std::shared_ptr<data_exp<T>>& dexp, const std::function<T(const std::string&)>& cb)
 {
 	auto qexp = std::dynamic_pointer_cast<question_exp<T>>(dexp);
-	if (qexp)
+	if (qexp) //for question_exp, recursion still happens here
 		return qexp->safe_execute(cb);
 	else if (!dexp->is_composite())
 		return (*dexp)(cb);
 
-	std::list<std::pair<std::shared_ptr<data_exp<T>>, bool>> dexps; //true - left branch, false - right branch
-	dexps.emplace_back(dexp, true);
 	std::list<immediate_data<T>> res;
-	auto direction = 0; //0 - left-bottom, 1 - right-bottom, 2 - top-left
-	for (auto iter = dexps.crbegin(); iter != dexps.crend();)
-		if (0 == direction)
-		{
-			auto data = iter->first->get_1st_data();
-			if (data->is_composite())
-			{
-				dexps.emplace_back(data, true);
-				iter = dexps.crbegin();
-			}
-			else
-			{
-				res.emplace_back(safe_execute(data, cb)); //for question_exp, recursion still happens here
-				direction = 1;
-			}
-		}
-		else if (1 == direction)
-		{
-			auto data = iter->first->get_2nd_data();
-			if (data->is_composite())
-			{
-				dexps.emplace_back(data, false);
-				iter = dexps.crbegin();
-				direction = 0;
-			}
-			else
-			{
-				res.emplace_back(safe_execute(data, cb)); //for question_exp, recursion still happens here
-				direction = 2;
-			}
-		}
-		else //2 == direction
-		{
+	travel_exp<std::shared_ptr<data_exp<T>>>(dexp,
+		[&](const std::shared_ptr<data_exp<T>>& data) {res.emplace_back(safe_execute(data, cb));},
+		[](const std::shared_ptr<data_exp<T>>&) {return false;},
+		[&](const std::shared_ptr<data_exp<T>>& data) {res.emplace_back(safe_execute(data, cb));},
+		[&](const std::shared_ptr<data_exp<T>>& data) {
 			T re = res.back();
 			res.pop_back();
-			res.back().merge_with(iter->first->get_operator(), re);
-
-			if (iter++->second)
-			{
-				direction = 1;
-				iter = decltype(iter)(dexps.erase(iter.base(), std::end(dexps)));
-			}
+			res.back().merge_with(data->get_operator(), re);
 		}
+	);
 
 	return res.front();
 }
@@ -932,53 +966,17 @@ template <typename T> inline T safe_execute(const std::shared_ptr<data_exp<T>>& 
 template <typename T> inline void safe_delete(const std::shared_ptr<data_exp<T>>& dexp)
 {
 	auto qexp = std::dynamic_pointer_cast<question_exp<T>>(dexp);
-	if (qexp)
+	if (qexp) //for question_exp, recursion still happens here
 		return qexp->safe_delete();
 	else if (!dexp->is_composite())
 		return;
 
-	std::list<std::pair<std::shared_ptr<data_exp<T>>, bool>> dexps; //true - left branch, false - right branch
-	dexps.emplace_back(dexp, true);
-	auto direction = 0; //0 - left-bottom, 1 - right-bottom, 2 - top-left
-	for (auto iter = dexps.crbegin(); iter != dexps.crend();)
-		if (0 == direction)
-		{
-			auto data = iter->first->get_1st_data();
-			if (data->is_composite())
-			{
-				dexps.emplace_back(data, true);
-				iter = dexps.crbegin();
-			}
-			else
-			{
-				safe_delete(data); //for question_exp, recursion still happens here
-				direction = 1;
-			}
-		}
-		else if (1 == direction)
-		{
-			auto data = iter->first->get_2nd_data();
-			if (data->is_composite())
-			{
-				dexps.emplace_back(data, false);
-				iter = dexps.crbegin();
-				direction = 0;
-			}
-			else
-			{
-				safe_delete(data); //for question_exp, recursion still happens here
-				direction = 2;
-			}
-		}
-		else //2 == direction
-		{
-			iter->first->clear();
-			if (iter++->second)
-			{
-				direction = 1;
-				iter = decltype(iter)(dexps.erase(iter.base(), std::end(dexps)));
-			}
-		}
+	travel_exp<std::shared_ptr<data_exp<T>>>(dexp,
+		[](const std::shared_ptr<data_exp<T>>& data) {safe_delete(data);},
+		[](const std::shared_ptr<data_exp<T>>&) {return false;},
+		[](const std::shared_ptr<data_exp<T>>& data) {safe_delete(data);},
+		[](const std::shared_ptr<data_exp<T>>& data) {data->clear();}
+	);
 }
 /////////////////////////////////////////////////////////////////////////////////////////
 
@@ -988,8 +986,8 @@ template <typename T> class judge_exp : public exp
 public:
 	virtual bool is_judge() const {return true;}
 	virtual const std::string& get_operator() const {throw("unsupported get operator operation!");}
-	virtual std::shared_ptr<judge_exp<T>> get_1st_judge() const {throw("unsupported get 1st judge operation!");}
-	virtual std::shared_ptr<judge_exp<T>> get_2nd_judge() const {throw("unsupported get 2nd judge operation!");}
+	virtual std::shared_ptr<judge_exp<T>> get_left_item() const {throw("unsupported get left item operation!");}
+	virtual std::shared_ptr<judge_exp<T>> get_right_item() const {throw("unsupported get right item operation!");}
 
 	virtual std::shared_ptr<judge_exp<T>> final_optimize() = 0;
 
@@ -999,78 +997,29 @@ public:
 	virtual void safe_delete() const = 0;
 };
 
-//since recursion is used during the whole compilation and execution, if your expression is too complicated to
-// be compiled and executed (stack overflow), use
-// qme::O0/qme::O1 to compile it,
-// qme::safe_execute to execute it and
-// qme::safe_delete to delete it,
-// then no recursion will be introduced (except question mark expression used as sub expression).
-//with optimization level qme::O0/qme::O1, following functions are still available, if you're encountering above situation,
-// you should not call them manually, please note:
-// is_easy_to_negative
-// is_negative
-// get_depth
-// show_immediate_value
-// merge_with
-// trim_myself
-// final_optimize
-// to_negative
 template <typename T> inline bool safe_execute(const std::shared_ptr<judge_exp<T>>& jexp, const std::function<T(const std::string&)>& cb)
 {
 	if (!jexp->is_composite())
 		return jexp->safe_execute(cb);
 
-	std::list<std::pair<std::shared_ptr<judge_exp<T>>, bool>> jexps; //true - left branch, false - right branch
-	jexps.emplace_back(jexp, true);
 	auto re = false;
-	auto direction = 0; //0 - left-bottom, 1 - right-bottom, 2 - top-left
-	for (auto iter = jexps.crbegin(); iter != jexps.crend();)
-		if (0 == direction)
-		{
-			auto judge = iter->first->get_1st_judge();
-			if (judge->is_composite())
-			{
-				jexps.emplace_back(judge, true);
-				iter = jexps.crbegin();
-			}
-			else
-			{
-				re = judge->safe_execute(cb);
-				direction = 1;
-			}
-		}
-		else if (1 == direction)
-		{
-			auto& lop = iter->first->get_operator();
+	travel_exp<std::shared_ptr<judge_exp<T>>>(jexp,
+		[&](const std::shared_ptr<judge_exp<T>>& judge) {re = judge->safe_execute(cb);},
+		[&](const std::shared_ptr<judge_exp<T>>& judge) {
+			auto& lop = judge->get_operator();
 			if ("&&" == lop) //this if statement will impact efficiency, but we have no choice
 			{
 				if (!re)
-					direction = 2;
+					return true;
 			}
 			else if (re) //"||" == lop
-				direction = 2;
+				return true;
 
-			if (1 == direction)
-			{
-				auto judge = iter->first->get_2nd_judge();
-				if (judge->is_composite())
-				{
-					jexps.emplace_back(judge, false);
-					iter = jexps.crbegin();
-					direction = 0;
-				}
-				else
-				{
-					re = judge->safe_execute(cb);
-					direction = 2;
-				}
-			}
-		}
-		else if (iter++->second) //2 == direction
-		{
-			direction = 1;
-			iter = decltype(iter)(jexps.erase(iter.base(), std::end(jexps)));
-		}
+			return false;
+		},
+		[&](const std::shared_ptr<judge_exp<T>>& judge) {re = judge->safe_execute(cb);},
+		[](const std::shared_ptr<judge_exp<T>>&) {}
+	);
 
 	return re;
 }
@@ -1080,48 +1029,12 @@ template <typename T> inline void safe_delete(const std::shared_ptr<judge_exp<T>
 	if (!jexp->is_composite())
 		return jexp->safe_delete();
 
-	std::list<std::pair<std::shared_ptr<judge_exp<T>>, bool>> jexps; //true - left branch, false - right branch
-	jexps.emplace_back(jexp, true);
-	auto direction = 0; //0 - left-bottom, 1 - right-bottom, 2 - top-left
-	for (auto iter = jexps.crbegin(); iter != jexps.crend();)
-		if (0 == direction)
-		{
-			auto judge = iter->first->get_1st_judge();
-			if (judge->is_composite())
-			{
-				jexps.emplace_back(judge, true);
-				iter = jexps.crbegin();
-			}
-			else
-			{
-				judge->safe_delete();
-				direction = 1;
-			}
-		}
-		else if (1 == direction)
-		{
-			auto judge = iter->first->get_2nd_judge();
-			if (judge->is_composite())
-			{
-				jexps.emplace_back(judge, false);
-				iter = jexps.crbegin();
-				direction = 0;
-			}
-			else
-			{
-				judge->safe_delete();
-				direction = 2;
-			}
-		}
-		else //2 == direction
-		{
-			iter->first->clear();
-			if (iter++->second)
-			{
-				direction = 1;
-				iter = decltype(iter)(jexps.erase(iter.base(), std::end(jexps)));
-			}
-		}
+	travel_exp<std::shared_ptr<judge_exp<T>>>(jexp,
+		[](const std::shared_ptr<judge_exp<T>>& judge) {judge->safe_delete();},
+		[](const std::shared_ptr<judge_exp<T>>&) {return false;},
+		[](const std::shared_ptr<judge_exp<T>>& judge) {judge->safe_delete();},
+		[](const std::shared_ptr<judge_exp<T>>& judge) {judge->clear();}
+	);
 }
 
 template <typename T> class unitary_judge_exp : public judge_exp<T>
@@ -1304,8 +1217,8 @@ protected:
 public:
 	virtual bool is_composite() const {return true;}
 	virtual const std::string& get_operator() const {return lop;}
-	virtual std::shared_ptr<judge_exp<T>> get_1st_judge() const {return jexp_l;}
-	virtual std::shared_ptr<judge_exp<T>> get_2nd_judge() const {return jexp_r;}
+	virtual std::shared_ptr<judge_exp<T>> get_left_item() const {return jexp_l;}
+	virtual std::shared_ptr<judge_exp<T>> get_right_item() const {return jexp_r;}
 	virtual int get_depth() const {return 1 + std::max(jexp_l->get_depth(), jexp_l->get_depth());}
 
 	virtual void show_immediate_value() const {jexp_l->show_immediate_value(); jexp_r->show_immediate_value();}
