@@ -89,7 +89,8 @@ public:
 	virtual bool is_composite() const {return false;}
 	virtual int get_depth() const {return 1;}
 	virtual void show_immediate_value() const {}
-	virtual void clear() {}
+	virtual void safe_delete() const {} //used in qme::safe_delete function, do not call it directly
+	virtual void clear() {} //used in qme::safe_delete function, do not call it directly
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -119,6 +120,8 @@ public:
 	virtual std::shared_ptr<data_exp<T>> to_negative() const = 0;
 
 	virtual T operator()(const std::function<T(const std::string&)>&) const = 0;
+	//used in qme::safe_execute function, do not call it directly
+	virtual T safe_execute(const std::function<T(const std::string&)>& cb) const {return operator()(cb);}
 };
 /////////////////////////////////////////////////////////////////////////////////////////
 
@@ -395,6 +398,7 @@ public:
 		}
 	}
 
+	virtual T safe_execute(const std::function<T(const std::string&)>&) const {throw("unsupported safe execute operation!");}
 	virtual void clear() {dexp_l.reset(); dexp_r.reset();}
 
 private:
@@ -842,7 +846,10 @@ template <typename T> inline int travel_exp(const T& exp,
 	const std::function<void(const T&)>& backtrack_handler)
 {
 	if (!exp->is_composite())
+	{
+		left_handler(exp);
 		return 1;
+	}
 
 	auto depth = 1, max_depth = 0;
 	std::list<std::pair<T, bool>> exps; //true - left branch, false - right branch
@@ -941,20 +948,13 @@ private:
 	T value;
 };
 
-template <typename T> class question_exp;
 template <typename T> inline T safe_execute(const std::shared_ptr<data_exp<T>>& dexp, const std::function<T(const std::string&)>& cb)
 {
-	auto qexp = std::dynamic_pointer_cast<question_exp<T>>(dexp);
-	if (qexp) //for question_exp, recursion still happens here
-		return qexp->safe_execute(cb);
-	else if (!dexp->is_composite())
-		return (*dexp)(cb);
-
 	std::list<immediate_data<T>> res;
 	travel_exp<std::shared_ptr<data_exp<T>>>(dexp,
-		[&](const std::shared_ptr<data_exp<T>>& data) {res.emplace_back(safe_execute(data, cb));},
+		[&](const std::shared_ptr<data_exp<T>>& data) {res.emplace_back(data->safe_execute(cb));},
 		[](const std::shared_ptr<data_exp<T>>&) {return false;},
-		[&](const std::shared_ptr<data_exp<T>>& data) {res.emplace_back(safe_execute(data, cb));},
+		[&](const std::shared_ptr<data_exp<T>>& data) {res.emplace_back(data->safe_execute(cb));},
 		[&](const std::shared_ptr<data_exp<T>>& data) {
 			T re = res.back();
 			res.pop_back();
@@ -967,16 +967,10 @@ template <typename T> inline T safe_execute(const std::shared_ptr<data_exp<T>>& 
 
 template <typename T> inline void safe_delete(const std::shared_ptr<data_exp<T>>& dexp)
 {
-	auto qexp = std::dynamic_pointer_cast<question_exp<T>>(dexp);
-	if (qexp) //for question_exp, recursion still happens here
-		return qexp->safe_delete();
-	else if (!dexp->is_composite())
-		return;
-
 	travel_exp<std::shared_ptr<data_exp<T>>>(dexp,
-		[](const std::shared_ptr<data_exp<T>>& data) {safe_delete(data);},
+		[](const std::shared_ptr<data_exp<T>>& data) {data->safe_delete();},
 		[](const std::shared_ptr<data_exp<T>>&) {return false;},
-		[](const std::shared_ptr<data_exp<T>>& data) {safe_delete(data);},
+		[](const std::shared_ptr<data_exp<T>>& data) {data->safe_delete();},
 		[](const std::shared_ptr<data_exp<T>>& data) {data->clear();}
 	);
 }
@@ -995,15 +989,12 @@ public:
 
 	virtual bool operator()(const std::function<T(const std::string&)>&) const = 0;
 	//is recursion fully eliminated or not depends on the data_exp(s) this judge_exp holds
+	//used in qme::safe_execute function, do not call it directly
 	virtual bool safe_execute(const std::function<T(const std::string&)>&) const = 0;
-	virtual void safe_delete() const = 0;
 };
 
 template <typename T> inline bool safe_execute(const std::shared_ptr<judge_exp<T>>& jexp, const std::function<T(const std::string&)>& cb)
 {
-	if (!jexp->is_composite())
-		return jexp->safe_execute(cb);
-
 	auto re = false;
 	travel_exp<std::shared_ptr<judge_exp<T>>>(jexp,
 		[&](const std::shared_ptr<judge_exp<T>>& judge) {re = judge->safe_execute(cb);},
@@ -1028,9 +1019,6 @@ template <typename T> inline bool safe_execute(const std::shared_ptr<judge_exp<T
 
 template <typename T> inline void safe_delete(const std::shared_ptr<judge_exp<T>>& jexp)
 {
-	if (!jexp->is_composite())
-		return jexp->safe_delete();
-
 	travel_exp<std::shared_ptr<judge_exp<T>>>(jexp,
 		[](const std::shared_ptr<judge_exp<T>>& judge) {judge->safe_delete();},
 		[](const std::shared_ptr<judge_exp<T>>&) {return false;},
@@ -1233,7 +1221,6 @@ public:
 	}
 
 	virtual bool safe_execute(const std::function<T(const std::string&)>&) const {throw("unsupported safe execute operation!");}
-	virtual void safe_delete() const {throw("unsupported safe delete operation!");}
 	virtual void clear() {jexp_l.reset(); jexp_r.reset();}
 
 protected:
@@ -1302,10 +1289,12 @@ public:
 
 	virtual T operator()(const std::function<T(const std::string&)>& cb) const {return (*jexp)(cb) ? (*dexp_l)(cb) : (*dexp_r)(cb);}
 
+	//for question_exp, recursion still happens here if this question_exp is a sub expression
 	virtual T safe_execute(const std::function<T(const std::string&)>& cb) const
 		{return qme::safe_execute(jexp, cb) ? qme::safe_execute(dexp_l, cb) : qme::safe_execute(dexp_r, cb);}
 
-	void safe_delete() {qme::safe_delete(jexp); qme::safe_delete(dexp_l); qme::safe_delete(dexp_r);}
+	//for question_exp, recursion still happens here if this question_exp is a sub expression
+	virtual void safe_delete() const {qme::safe_delete(jexp); qme::safe_delete(dexp_l); qme::safe_delete(dexp_r);}
 
 protected:
 	std::shared_ptr<data_exp<T>> clone() const {return std::make_shared<question_exp<T>>(jexp, dexp_l, dexp_r);}
