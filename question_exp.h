@@ -109,8 +109,8 @@ public:
 	virtual T get_immediate_value() const {throw("unsupported get immediate value operation!");}
 	virtual const std::string& get_variable_name() const {throw("unsupported get variable name operation!");}
 	virtual char get_operator() const {throw("unsupported get operator operation!");}
-	virtual std::shared_ptr<data_exp<T>> get_left_item() const {throw("unsupported get left item operation!");}
-	virtual std::shared_ptr<data_exp<T>> get_right_item() const {throw("unsupported get right item operation!");}
+	virtual const std::shared_ptr<data_exp<T>>& get_left_item() const {throw("unsupported get left item operation!");}
+	virtual const std::shared_ptr<data_exp<T>>& get_right_item() const {throw("unsupported get right item operation!");}
 
 	virtual bool merge_with(char, const std::shared_ptr<data_exp<T>>&) {return false;}
 	virtual bool merge_with(const std::shared_ptr<data_exp<T>>&, char) {return false;}
@@ -189,8 +189,8 @@ public:
 	}
 	virtual int get_depth() const {return 1 + std::max(dexp_l->get_depth(), dexp_r->get_depth());}
 	virtual char get_operator() const {return op;}
-	virtual std::shared_ptr<data_exp<T>> get_left_item() const {return dexp_l;}
-	virtual std::shared_ptr<data_exp<T>> get_right_item() const {return dexp_r;}
+	virtual const std::shared_ptr<data_exp<T>>& get_left_item() const {return dexp_l;}
+	virtual const std::shared_ptr<data_exp<T>>& get_right_item() const {return dexp_r;}
 
 	virtual void show_immediate_value() const {dexp_l->show_immediate_value(); dexp_r->show_immediate_value();}
 	virtual bool merge_with(char other_op, const std::shared_ptr<data_exp<T>>& other_exp)
@@ -514,6 +514,7 @@ template <typename T> class variable_data_exp : public data_exp<T>
 public:
 	variable_data_exp(const std::string& _variable_name) : variable_name(_variable_name) {}
 
+	virtual const std::string& get_variable_name() const {return variable_name;}
 	virtual std::shared_ptr<data_exp<T>> to_negative() const {return std::make_shared<negative_variable_data_exp<T>>(variable_name);}
 
 	virtual T operator()(const std::function<T(const std::string&)>& cb) const
@@ -551,6 +552,7 @@ template <typename T> class exponent_data_exp : public data_exp<T>
 public:
 	exponent_data_exp(const std::string& _variable_name, int _exponent) : variable_name(_variable_name), exponent(_exponent) {}
 
+	virtual const std::string& get_variable_name() const {return variable_name;}
 	virtual void show_immediate_value() const {std::cout << ' ' << exponent;}
 
 	virtual std::shared_ptr<data_exp<T>> to_negative() const
@@ -986,8 +988,8 @@ template <typename T> class judge_exp : public exp
 public:
 	virtual bool is_judge() const {return true;}
 	virtual const std::string& get_operator() const {throw("unsupported get operator operation!");}
-	virtual std::shared_ptr<judge_exp<T>> get_left_item() const {throw("unsupported get left item operation!");}
-	virtual std::shared_ptr<judge_exp<T>> get_right_item() const {throw("unsupported get right item operation!");}
+	virtual const std::shared_ptr<judge_exp<T>>& get_left_item() const {throw("unsupported get left item operation!");}
+	virtual const std::shared_ptr<judge_exp<T>>& get_right_item() const {throw("unsupported get right item operation!");}
 
 	virtual std::shared_ptr<judge_exp<T>> final_optimize() = 0;
 
@@ -1217,8 +1219,8 @@ protected:
 public:
 	virtual bool is_composite() const {return true;}
 	virtual const std::string& get_operator() const {return lop;}
-	virtual std::shared_ptr<judge_exp<T>> get_left_item() const {return jexp_l;}
-	virtual std::shared_ptr<judge_exp<T>> get_right_item() const {return jexp_r;}
+	virtual const std::shared_ptr<judge_exp<T>>& get_left_item() const {return jexp_l;}
+	virtual const std::shared_ptr<judge_exp<T>>& get_right_item() const {return jexp_r;}
 	virtual int get_depth() const {return 1 + std::max(jexp_l->get_depth(), jexp_l->get_depth());}
 
 	virtual void show_immediate_value() const {jexp_l->show_immediate_value(); jexp_r->show_immediate_value();}
@@ -1302,7 +1304,8 @@ public:
 
 	virtual T safe_execute(const std::function<T(const std::string&)>& cb) const
 		{return qme::safe_execute(jexp, cb) ? qme::safe_execute(dexp_l, cb) : qme::safe_execute(dexp_r, cb);}
-	virtual void safe_delete() {qme::safe_delete(jexp); qme::safe_delete(dexp_l); qme::safe_delete(dexp_r);}
+
+	void safe_delete() {qme::safe_delete(jexp); qme::safe_delete(dexp_l); qme::safe_delete(dexp_r);}
 
 protected:
 	std::shared_ptr<data_exp<T>> clone() const {return std::make_shared<question_exp<T>>(jexp, dexp_l, dexp_r);}
