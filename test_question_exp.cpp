@@ -27,7 +27,7 @@ template <typename T = float> struct ut_input_and_expectation
 	T exp_1, exp_2;
 };
 
-template<typename T> void execute_qme(cpu_timer& timer, const std::shared_ptr<qme::data_exp<T>>& exp,
+template<typename T> void execute_qme(cpu_timer& timer, qme::data_exp_ctype<T>& exp,
 	const std::function<T(const std::string&)>& cb, T exp_re, int& exec_succ, int& match)
 {
 	timer.restart();
