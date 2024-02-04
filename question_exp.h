@@ -518,7 +518,6 @@ template <typename T> class variable_data_exp : public data_exp<T>
 public:
 	variable_data_exp(const std::string& _variable_name) : variable_name(_variable_name) {}
 
-	virtual const std::string& get_variable_name() const {return variable_name;}
 	virtual std::shared_ptr<data_exp<T>> to_negative() const {return std::make_shared<negative_variable_data_exp<T>>(variable_name);}
 
 	virtual T operator()(const std::function<T(const std::string&)>& cb) const
@@ -556,7 +555,6 @@ template <typename T> class exponent_data_exp : public data_exp<T>
 public:
 	exponent_data_exp(const std::string& _variable_name, int _exponent) : variable_name(_variable_name), exponent(_exponent) {}
 
-	virtual const std::string& get_variable_name() const {return variable_name;}
 	virtual void show_immediate_value() const {std::cout << ' ' << exponent;}
 
 	virtual std::shared_ptr<data_exp<T>> to_negative() const
@@ -952,26 +950,26 @@ template <typename T> inline T safe_execute(const std::shared_ptr<data_exp<T>>& 
 {
 	std::list<immediate_data<T>> res;
 	travel_exp<std::shared_ptr<data_exp<T>>>(dexp,
-		[&](const std::shared_ptr<data_exp<T>>& data) {res.emplace_back(data->safe_execute(cb));},
+		[&](const std::shared_ptr<data_exp<T>>& left) {res.emplace_back(left->safe_execute(cb));},
 		[](const std::shared_ptr<data_exp<T>>&) {return false;},
-		[&](const std::shared_ptr<data_exp<T>>& data) {res.emplace_back(data->safe_execute(cb));},
-		[&](const std::shared_ptr<data_exp<T>>& data) {
+		[&](const std::shared_ptr<data_exp<T>>& right) {res.emplace_back(right->safe_execute(cb));},
+		[&](const std::shared_ptr<data_exp<T>>& parent) {
 			T re = res.back();
 			res.pop_back();
-			res.back().merge_with(data->get_operator(), re);
+			res.back().merge_with(parent->get_operator(), re);
 		}
 	);
 
 	return res.front();
 }
 
-template <typename T> inline void safe_delete(const std::shared_ptr<data_exp<T>>& dexp)
+template <typename T, template<typename> class Exp> inline void safe_delete(const std::shared_ptr<Exp<T>>& exp)
 {
-	travel_exp<std::shared_ptr<data_exp<T>>>(dexp,
-		[](const std::shared_ptr<data_exp<T>>& data) {data->safe_delete();},
-		[](const std::shared_ptr<data_exp<T>>&) {return false;},
-		[](const std::shared_ptr<data_exp<T>>& data) {data->safe_delete();},
-		[](const std::shared_ptr<data_exp<T>>& data) {data->clear();}
+	travel_exp<std::shared_ptr<Exp<T>>>(exp,
+		[](const std::shared_ptr<Exp<T>>& left) {left->safe_delete();},
+		[](const std::shared_ptr<Exp<T>>&) {return false;},
+		[](const std::shared_ptr<Exp<T>>& right) {right->safe_delete();},
+		[](const std::shared_ptr<Exp<T>>& parent) {parent->clear();}
 	);
 }
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -997,34 +995,14 @@ template <typename T> inline bool safe_execute(const std::shared_ptr<judge_exp<T
 {
 	auto re = false;
 	travel_exp<std::shared_ptr<judge_exp<T>>>(jexp,
-		[&](const std::shared_ptr<judge_exp<T>>& judge) {re = judge->safe_execute(cb);},
-		[&](const std::shared_ptr<judge_exp<T>>& judge) {
-			auto& lop = judge->get_operator();
-			if ("&&" == lop) //this if statement will impact efficiency, but we have no choice
-			{
-				if (!re)
-					return true;
-			}
-			else if (re) //"||" == lop
-				return true;
-
-			return false;
-		},
-		[&](const std::shared_ptr<judge_exp<T>>& judge) {re = judge->safe_execute(cb);},
+		[&](const std::shared_ptr<judge_exp<T>>& left) {re = left->safe_execute(cb);},
+		//this judgement will impact efficiency, but we have no choice, return false - continue, true - backtrack
+		[&](const std::shared_ptr<judge_exp<T>>& parent) {return "&&" == parent->get_operator() ? !re : re;},
+		[&](const std::shared_ptr<judge_exp<T>>& right) {re = right->safe_execute(cb);},
 		[](const std::shared_ptr<judge_exp<T>>&) {}
 	);
 
 	return re;
-}
-
-template <typename T> inline void safe_delete(const std::shared_ptr<judge_exp<T>>& jexp)
-{
-	travel_exp<std::shared_ptr<judge_exp<T>>>(jexp,
-		[](const std::shared_ptr<judge_exp<T>>& judge) {judge->safe_delete();},
-		[](const std::shared_ptr<judge_exp<T>>&) {return false;},
-		[](const std::shared_ptr<judge_exp<T>>& judge) {judge->safe_delete();},
-		[](const std::shared_ptr<judge_exp<T>>& judge) {judge->clear();}
-	);
 }
 
 template <typename T> class unitary_judge_exp : public judge_exp<T>
