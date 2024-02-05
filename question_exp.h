@@ -93,11 +93,10 @@ public:
 	virtual void clear() {} //used in qme::safe_delete function, do not call it directly
 };
 
+/////////////////////////////////////////////////////////////////////////////////////////
 template <typename T> class data_exp;
 template <typename T> using data_exp_type = std::shared_ptr<data_exp<T>>;
 template <typename T> using data_exp_ctype = const data_exp_type<T>;
-
-/////////////////////////////////////////////////////////////////////////////////////////
 template <typename T> class data_exp : public exp
 {
 public:
@@ -130,10 +129,6 @@ public:
 /////////////////////////////////////////////////////////////////////////////////////////
 
 /////////////////////////////////////////////////////////////////////////////////////////
-template <typename T, typename O> inline data_exp_type<T> merge_data_exp(data_exp_ctype<T>&, data_exp_ctype<T>&, char);
-template <typename T, typename O> class composite_variable_data_exp;
-template <typename T> class immediate_data_exp;
-
 template <typename T> inline bool is_same_composite_variable(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r)
 {
 	return dexp_l->is_composite_variable() && dexp_r->is_composite_variable() &&
@@ -151,6 +146,62 @@ template <typename T> inline bool is_divisible(T dividend, T divisor)
 	return 0 == dividend || 1 == divisor || -1 == divisor || dividend == divisor || -dividend == divisor;
 }
 
+template <typename T> class immediate_data_exp : public data_exp<T>
+{
+public:
+	immediate_data_exp() : T(0) {}
+	immediate_data_exp(T v) : value(v) {}
+
+	virtual bool is_immediate() const {return true;}
+	virtual bool is_easy_to_negative() const {return true;}
+	virtual T get_immediate_value() const {return value;}
+
+	virtual void show_immediate_value() const {std::cout << ' ' << value;}
+	virtual bool merge_with(char other_op, data_exp_ctype<T>& other_exp)
+		{return other_exp->is_immediate() ? merge(other_op, other_exp->get_immediate_value()) : false;}
+	virtual data_exp_type<T> to_negative() const {return std::make_shared<immediate_data_exp<T>>(-value);}
+
+	virtual T operator()(const std::function<T(const std::string&)>&) const
+	{
+#ifdef DEBUG
+		std::cout << " get immediate value " << value << std::endl;
+#endif
+		return value;
+	}
+
+	operator T() const {return value;}
+	bool merge(char other_op, T v)
+	{
+		switch (other_op)
+		{
+		case '+':
+			value += v;
+			break;
+		case '-':
+			value -= v;
+			break;
+		case '*':
+			value *= v;
+			break;
+		case '/':
+			if (0 == v)
+				throw("divide zero");
+			value /= v;
+			break;
+		default:
+			throw("undefined operator " + std::string(1, other_op));
+			break;
+		}
+
+		return true;
+	}
+
+private:
+	T value;
+};
+
+template <typename T, typename O> inline data_exp_type<T> merge_data_exp(data_exp_ctype<T>&, data_exp_ctype<T>&, char);
+template <typename T, typename O> class composite_variable_data_exp;
 template <typename T, typename O> class binary_data_exp : public data_exp<T>
 {
 protected:
@@ -454,60 +505,6 @@ public:
 	}
 };
 
-template <typename T> class immediate_data_exp : public data_exp<T>
-{
-public:
-	immediate_data_exp() : T(0) {}
-	immediate_data_exp(T v) : value(v) {}
-
-	virtual bool is_immediate() const {return true;}
-	virtual bool is_easy_to_negative() const {return true;}
-	virtual T get_immediate_value() const {return value;}
-
-	virtual void show_immediate_value() const {std::cout << ' ' << value;}
-	virtual bool merge_with(char other_op, data_exp_ctype<T>& other_exp)
-		{return other_exp->is_immediate() ? merge_with(other_op, other_exp->get_immediate_value()) : false;}
-	virtual data_exp_type<T> to_negative() const {return std::make_shared<immediate_data_exp<T>>(-value);}
-
-	virtual T operator()(const std::function<T(const std::string&)>&) const
-	{
-#ifdef DEBUG
-		std::cout << " get immediate value " << value << std::endl;
-#endif
-		return value;
-	}
-
-	operator T() const {return value;}
-	bool merge_with(char other_op, T v)
-	{
-		switch (other_op)
-		{
-		case '+':
-			value += v;
-			break;
-		case '-':
-			value -= v;
-			break;
-		case '*':
-			value *= v;
-			break;
-		case '/':
-			if (0 == v)
-				throw("divide zero");
-			value /= v;
-			break;
-		default:
-			throw("undefined operator " + std::string(1, other_op));
-			break;
-		}
-
-		return true;
-	}
-
-private:
-	T value;
-};
-
 template <typename T> class negative_variable_data_exp;
 template <typename T> class variable_data_exp : public data_exp<T>
 {
@@ -748,12 +745,12 @@ inline data_exp_type<T> direct_merge_data_exp(data_exp_ctype<T>& dexp_l, data_ex
 	}
 }
 
-template <typename T, typename O> inline data_exp_type<T> merge_data_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r, char op)
+template <typename T, typename O>
+inline data_exp_type<T> merge_data_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r, char op)
 {
 	if (0 == O::level())
 		return direct_merge_data_exp<T, O>(dexp_l, dexp_r, op);
-
-	if (dexp_r->merge_with(dexp_l, op)) //parse 'C * Na^M' and 'C / Na^M' to composite_variable_data_exp instead of binary_data_exp
+	else if (dexp_r->merge_with(dexp_l, op)) //parse 'C * Na^M' and 'C / Na^M' to composite_variable_data_exp instead of binary_data_exp
 	{
 		auto data = dexp_r->trim_myself();
 		return data ? data : dexp_r;
@@ -831,6 +828,8 @@ inline data_exp_type<T> merge_data_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype
 // trim_myself
 // final_optimize
 // to_negative
+//return the depth of this expression (not like the get_depth interface, recursion is not applied during the calculation)
+// to get the max depth, the short_circuit_controller must always returns false, please note.
 template <typename T> inline int travel_exp(const T& exp,
 	const std::function<void(const T&)>& left_handler,
 	const std::function<bool(const T&)>& short_circuit_controller, //false - continue, true - backtrack
@@ -907,11 +906,7 @@ template <typename T> inline T safe_execute(data_exp_ctype<T>& dexp, const std::
 		[&](data_exp_ctype<T>& left) {res.emplace_back(left->safe_execute(cb));},
 		[](data_exp_ctype<T>&) {return false;},
 		[&](data_exp_ctype<T>& right) {res.emplace_back(right->safe_execute(cb));},
-		[&](data_exp_ctype<T>& parent) {
-			T re = res.back();
-			res.pop_back();
-			res.back().merge_with(parent->get_operator(), re);
-		}
+		[&](data_exp_ctype<T>& parent) {T re = res.back(); res.pop_back(); res.back().merge(parent->get_operator(), re);}
 	);
 
 	return res.front();
@@ -928,11 +923,10 @@ template <typename T, template<typename> class Exp> inline void safe_delete(cons
 }
 /////////////////////////////////////////////////////////////////////////////////////////
 
+/////////////////////////////////////////////////////////////////////////////////////////
 template <typename T> class judge_exp;
 template <typename T> using judge_exp_type = std::shared_ptr<judge_exp<T>>;
 template <typename T> using judge_exp_ctype = const judge_exp_type<T>;
-
-/////////////////////////////////////////////////////////////////////////////////////////
 template <typename T> class judge_exp : public exp
 {
 public:
@@ -1249,7 +1243,7 @@ template <typename T, typename O, template<typename> class Exp>
 inline std::shared_ptr<Exp<T>> final_optimize(const std::shared_ptr<Exp<T>>& exp)
 {
 	auto re = exp;
-	if (O::level() >= 2)
+	if (O::level() > 1)
 	{
 		auto final_re = re->final_optimize();
 		if (final_re)
