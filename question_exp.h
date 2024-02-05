@@ -48,7 +48,6 @@ template<typename O> inline bool is_same_operator_level(char op_1, char op_2)
 {
 	if (O::level() > 2)
 		return (is_operator_1(op_1) && is_operator_1(op_2)) || (is_operator_2(op_1) && is_operator_2(op_2));
-
 	return (is_operator_1(op_1) && is_operator_1(op_2)) || ('*' == op_1 && '*' == op_2);
 }
 
@@ -142,7 +141,6 @@ template <typename T> inline bool is_divisible(T dividend, T divisor)
 {
 	if (0 == divisor)
 		throw("divide zero");
-
 	return 0 == dividend || 1 == divisor || -1 == divisor || dividend == divisor || -dividend == divisor;
 }
 
@@ -276,7 +274,7 @@ public:
 				other_op = '*' == other_op ? '/' : '*';
 			return dexp_r->merge_with(other_op, other_exp);
 		}
-		else if (O::level() < 3 && '+' == other_op && '/' == op && //'N1*a^M / C + N2*a^M' -> '(N1 + N2*C)*a^M / C'
+		else if (2 == O::level() && '+' == other_op && '/' == op && //'N1*a^M / C + N2*a^M' -> '(N1 + N2*C)*a^M / C'
 			dexp_r->is_immediate() && is_same_composite_variable(dexp_l, other_exp) &&
 			dexp_l->get_exponent() == other_exp->get_exponent())
 		{
@@ -323,20 +321,22 @@ public:
 		case '*':
 			if (dexp_l->is_immediate())
 			{
-				if (1 == dexp_l->get_immediate_value())
+				auto v = dexp_l->get_immediate_value();
+				if (1 == v)
 					return dexp_r;
-				else if (0 == dexp_l->get_immediate_value())
+				else if (0 == v)
 					return dexp_l;
-				else if (-1 == dexp_l->get_immediate_value())
+				else if (-1 == v)
 					return dexp_r->to_negative();
 			}
 			else if (dexp_r->is_immediate())
 			{
-				if (1 == dexp_r->get_immediate_value())
+				auto v = dexp_r->get_immediate_value();
+				if (1 == v)
 					return dexp_l;
-				else if (0 == dexp_r->get_immediate_value())
+				else if (0 == v)
 					return dexp_r;
-				else if (-1 == dexp_r->get_immediate_value())
+				else if (-1 == v)
 					return dexp_l->to_negative();
 			}
 			if ((dexp_l->is_negative() && (dexp_r->is_negative() || dexp_r->is_easy_to_negative())) ||
@@ -351,17 +351,18 @@ public:
 			}
 			else if (dexp_r->is_immediate())
 			{
-				if (1 == dexp_r->get_immediate_value())
+				auto v = dexp_r->get_immediate_value();
+				if (1 == v)
 					return dexp_l;
-				else if (0 == dexp_r->get_immediate_value())
+				else if (0 == v)
 					throw("divide zero");
-				else if (-1 == dexp_r->get_immediate_value())
+				else if (-1 == v)
 					return dexp_l->to_negative();
 			}
 			if ((dexp_l->is_negative() && (dexp_r->is_negative() || dexp_r->is_easy_to_negative())) ||
 				(dexp_r->is_negative() && (dexp_l->is_negative() || dexp_l->is_easy_to_negative())))
 				return merge_data_exp<T, O>(dexp_l->to_negative(), dexp_r->to_negative(), '/');
-			else if (O::level() < 3 && is_same_composite_variable(dexp_l, dexp_r))
+			else if (2 == O::level() && is_same_composite_variable(dexp_l, dexp_r))
 			{
 				//'N1*a^M1 / N2*a^M2' -> 'N1*a^(M1-M2) / N2' where M1 > M2 > 0
 				//for other conditions, we will handle them in composite_variable_data_exp's:
@@ -423,7 +424,7 @@ public:
 			}
 			break;
 		case '-':
-			//without this branch, '-a - b' will be converted to 'b + a' (from b - -a) instead of 'a + b', the former looks strange
+			//without this branch, '-a - b' will be transformed to 'b + a' (from b - -a) instead of 'a + b', the former looks strange
 			if (dexp_l->is_negative())
 				return merge_data_exp<T, O>(dexp_l->to_negative(), dexp_r, '+');
 			return merge_data_exp<T, O>(dexp_r, dexp_l, '-');
@@ -675,7 +676,6 @@ public:
 	{
 		if (0 == multiplier || 0 == exponent)
 			return std::make_shared<immediate_data_exp<T>>(multiplier);
-
 		return data_exp_type<T>();
 	}
 
@@ -784,6 +784,7 @@ inline data_exp_type<T> merge_data_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype
 					data = dexp_l->trim_myself();
 					if (!data)
 						data = dexp_l;
+
 					return merge_data_exp<T, O>(data, dexp_r->get_left_item(), op);
 				}
 				else
@@ -792,7 +793,7 @@ inline data_exp_type<T> merge_data_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype
 
 			return merge_data_exp<T, O>(data, dexp_r->get_right_item(), op_2);
 		}
-		else if (O::level() < 3 && '+' == op && '/' == op_2 && //'N1*a^M + N2*a^M / C' -> '(N1*C + N2)*a^M / C'
+		else if (2 == O::level() && '+' == op && '/' == op_2 && //'N1*a^M + N2*a^M / C' -> '(N1*C + N2)*a^M / C'
 			dexp_r->get_right_item()->is_immediate() && is_same_composite_variable(dexp_l, dexp_r->get_left_item()) &&
 			dexp_l->get_exponent() == dexp_r->get_left_item()->get_exponent())
 		{
@@ -1911,7 +1912,6 @@ private:
 			{
 				if (!fd_2)
 					throw("missing operand!");
-
 				return std::make_shared<question_exp<T>>(judge_1, fd_1, fd_2);
 			}
 			else
