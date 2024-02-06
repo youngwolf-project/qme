@@ -1257,6 +1257,7 @@ inline std::shared_ptr<Exp<T>> final_optimize(const std::shared_ptr<Exp<T>>& exp
 	return re;
 }
 
+using exp_type = std::shared_ptr<exp>;
 template <typename T = float, typename O = O3> class compiler
 {
 private:
@@ -1264,7 +1265,7 @@ private:
 	{
 		std::string name, raw_exp;
 		std::vector<std::string> items;
-		std::shared_ptr<exp> parsed_exp;
+		exp_type parsed_exp;
 	};
 
 public:
@@ -1283,8 +1284,8 @@ public:
 		return re;
 	}
 
-	static std::shared_ptr<exp> compile(const char* statement) {return compile(std::string(statement));}
-	static std::shared_ptr<exp> compile(const std::string& statement)
+	static exp_type compile(const char* statement) {return compile(std::string(statement));}
+	static exp_type compile(const std::string& statement)
 	{
 		try
 		{
@@ -1294,7 +1295,6 @@ public:
 			auto old_exp = expression;
 #endif
 			std::map<std::string, sub_exp> sub_exps;
-
 			size_t index = 0;
 			try
 			{
@@ -1358,7 +1358,7 @@ public:
 		catch (const char* e) {printf("\033[31m%s\033[0m\n", e);}
 		catch (...) {puts("\033[31munknown exception happened!\033[0m");}
 
-		return std::shared_ptr<exp>();
+		return exp_type();
 	}
 
 private:
@@ -1618,7 +1618,7 @@ private:
 			throw("missing logical operand!");
 	}
 
-	static std::shared_ptr<exp> compile(const std::vector<std::string>& items, const std::map<std::string, sub_exp>& sub_exps)
+	static exp_type compile(const std::vector<std::string>& items, const std::map<std::string, sub_exp>& sub_exps)
 	{
 		size_t index = 0, end_index = items.size();
 		try {return compile(items, sub_exps, index, end_index);}
@@ -1643,7 +1643,7 @@ private:
 			return std::make_shared<immediate_data_exp<T>>((T) atoll(vov.data())); //todo, verify integer data
 	}
 
-	static std::shared_ptr<exp> compile(const std::vector<std::string>& items, const std::map<std::string, sub_exp>& sub_exps,
+	static exp_type compile(const std::vector<std::string>& items, const std::map<std::string, sub_exp>& sub_exps,
 		size_t& index, size_t end_index)
 	{
 		if (index >= end_index)
@@ -1810,14 +1810,14 @@ private:
 			}
 			else
 			{
-				std::shared_ptr<exp> parsed_exp;
+				exp_type parsed_exp;
 				if ('$' == item[0])
 				{
 					auto iter = sub_exps.find(item);
 					if (iter == std::end(sub_exps))
 						throw("undefined symbol " + item);
 					else if (!(parsed_exp = iter->second.parsed_exp)) //dependancy not ready
-						return std::shared_ptr<exp>();
+						return parsed_exp;
 				}
 				else
 					parsed_exp = parse_data(item);
