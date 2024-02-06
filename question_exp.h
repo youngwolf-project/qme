@@ -652,22 +652,21 @@ public:
 	//handle 'C * Na^M' and 'C / Na^M' only
 	virtual bool merge_with(data_exp_ctype<T>& other_exp, char other_op)
 	{
-		if (other_exp->is_immediate())
+		if (!other_exp->is_immediate())
+			return false;
+		else if ('*' == other_op)
+			return merge_with('*', other_exp);
+		else if ('/' == other_op && (O::level() > 2 || exponent >= 0))
 		{
-			if ('*' == other_op)
-				return merge_with('*', other_exp);
-			else if ('/' == other_op && (O::level() > 2 || exponent >= 0))
-			{
-				if (0 == multiplier)
-					throw("divide zero");
+			if (0 == multiplier)
+				throw("divide zero");
 
-				multiplier = other_exp->get_immediate_value() / multiplier;
-				exponent = -exponent;
-				return true;
-			}
+			multiplier = other_exp->get_immediate_value() / multiplier;
+			exponent = -exponent;
+			return true;
 		}
-
-		return false;
+		else
+			return false;
 	}
 
 	virtual data_exp_type<T> trim_myself()
@@ -743,8 +742,7 @@ inline data_exp_type<T> direct_merge_data_exp(data_exp_ctype<T>& dexp_l, data_ex
 	}
 }
 
-template <typename T, typename O>
-inline data_exp_type<T> merge_data_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r, char op)
+template <typename T, typename O> inline data_exp_type<T> merge_data_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r, char op)
 {
 	if (0 == O::level())
 		return direct_merge_data_exp<T, O>(dexp_l, dexp_r, op);
@@ -1146,7 +1144,7 @@ public:
 	virtual bool safe_execute(const std::function<T(const std::string&)>&) const {throw("unsupported safe execute operation!");}
 	virtual void clear() {jexp_l.reset(); jexp_r.reset();}
 
-protected:
+private:
 	std::string lop;
 	judge_exp_type<T> jexp_l, jexp_r;
 };
@@ -1156,7 +1154,8 @@ template <typename T> class and_judge_exp : public logical_exp<T>
 public:
 	and_judge_exp(judge_exp_ctype<T>& _jexp_l, judge_exp_ctype<T>& _jexp_r) : logical_exp<T>(_jexp_l, _jexp_r, "&&") {}
 
-	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->jexp_l)(cb) && (*this->jexp_r)(cb);}
+	virtual bool operator()(const std::function<T(const std::string&)>& cb) const
+		{return (*logical_exp<T>::get_left_item())(cb) && (*logical_exp<T>::get_right_item())(cb);}
 };
 
 template <typename T> class or_judge_exp : public logical_exp<T>
@@ -1164,7 +1163,8 @@ template <typename T> class or_judge_exp : public logical_exp<T>
 public:
 	or_judge_exp(judge_exp_ctype<T>& _jexp_l, judge_exp_ctype<T>& _jexp_r) : logical_exp<T>(_jexp_l, _jexp_r, "||") {}
 
-	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->jexp_l)(cb) || (*this->jexp_r)(cb);}
+	virtual bool operator()(const std::function<T(const std::string&)>& cb) const
+		{return (*logical_exp<T>::get_left_item())(cb) || (*logical_exp<T>::get_right_item())(cb);}
 };
 
 template <typename T>
