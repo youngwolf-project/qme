@@ -37,36 +37,29 @@ class O3 {public: static int level() {return 3;}};
 
 /////////////////////////////////////////////////////////////////////////////////////////
 inline bool is_operator_1(char input) {return '+' == input || '-' == input;}
-inline bool is_operator_1(const char* input) {return '+' == *input || '-' == *input;}
+inline bool is_operator_1(const char* input) {return is_operator_1(*input);}
 inline bool is_operator_1(const std::string& input) {return is_operator_1(input.data());}
 inline bool is_operator_2(char input) {return '*' == input || '/' == input;}
-inline bool is_operator_2(const char* input) {return '*' == *input || '/' == *input;}
+inline bool is_operator_2(const char* input) {return is_operator_2(*input);}
 inline bool is_operator_2(const std::string& input) {return is_operator_2(input.data());}
-inline bool is_operator(const char* input) {return is_operator_1(input) || is_operator_2(input);}
+inline bool is_operator(char input) {return is_operator_1(input) || is_operator_2(input);}
+inline bool is_operator(const char* input) {return is_operator(*input);}
 inline bool is_operator(const std::string& input) {return is_operator(input.data());}
-template<typename O> inline bool is_same_operator_level(char op_1, char op_2)
-{
-	if (O::level() > 2)
-		return (is_operator_1(op_1) && is_operator_1(op_2)) || (is_operator_2(op_1) && is_operator_2(op_2));
-	return (is_operator_1(op_1) && is_operator_1(op_2)) || ('*' == op_1 && '*' == op_2);
-}
-
+inline bool is_logical_operator(const char* input) {return 0 == strncmp(input, "&&", 2) || 0 == strncmp(input, "||", 2);}
+inline bool is_logical_operator(const std::string& input) {return is_logical_operator(input.data());}
 inline bool is_comparer(const char* input)
 {
 	return '>' == *input || '<' == *input ||
-		0 == strncmp(input, ">=", 2) || 0 == strncmp(input, "<=", 2) ||
-		0 == strncmp(input, "==", 2) || 0 == strncmp(input, "!=", 2);
+		0 == strncmp(input, ">=", 2) || 0 == strncmp(input, "<=", 2) || 0 == strncmp(input, "==", 2) || 0 == strncmp(input, "!=", 2);
 }
 inline bool is_comparer(const std::string& input) {return is_comparer(input.data());}
 
-inline bool is_logical_operator(const char* input) {return 0 == strncmp(input, "&&", 2) || 0 == strncmp(input, "||", 2);}
-inline bool is_logical_operator(const std::string& input) {return is_logical_operator(input.data());}
-
-inline bool is_key_1(const char* input)
+inline bool is_key_1(char input)
 {
-	return '!' == *input || '(' == *input || ')' == *input || is_operator(input) ||
-		'>' == *input || '<' == *input || '?' == *input || ':' == *input;
+	return '!' == input || '(' == input || ')' == input || '>' == input || '<' == input || '?' == input || ':' == input ||
+		is_operator(input);
 }
+inline bool is_key_1(const char* input) {return is_key_1(*input);}
 inline bool is_key_1(const std::string& input) {return is_key_1(input.data());}
 
 inline bool is_key_2(const char* input)
@@ -75,6 +68,13 @@ inline bool is_key_2(const char* input)
 		0 == strncmp(input, "==", 2) || 0 == strncmp(input, "!=", 2) || is_logical_operator(input);
 }
 inline bool is_key_2(const std::string& input) {return is_key_2(input.data());}
+
+template<typename O> inline bool is_same_operator_level(char op_1, char op_2)
+{
+	if (O::level() > 2)
+		return (is_operator_1(op_1) && is_operator_1(op_2)) || (is_operator_2(op_1) && is_operator_2(op_2));
+	return (is_operator_1(op_1) && is_operator_1(op_2)) || ('*' == op_1 && '*' == op_2);
+}
 /////////////////////////////////////////////////////////////////////////////////////////
 
 class exp
@@ -128,14 +128,11 @@ public:
 /////////////////////////////////////////////////////////////////////////////////////////
 
 /////////////////////////////////////////////////////////////////////////////////////////
-template <typename T> inline bool is_same_composite_variable(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r)
-{
-	return dexp_l->is_composite_variable() && dexp_r->is_composite_variable() &&
-		dexp_l->get_variable_name() == dexp_r->get_variable_name();
-}
-
 template <typename T> inline bool is_same_composite_variable(const std::string& variable_name, data_exp_ctype<T>& other_exp)
 	{return other_exp->is_composite_variable() && variable_name == other_exp->get_variable_name();}
+
+template <typename T> inline bool is_same_composite_variable(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r)
+	{return dexp_l->is_composite_variable() && is_same_composite_variable(dexp_l->get_variable_name(), dexp_r);}
 
 template <typename T> inline bool is_divisible(T dividend, T divisor)
 {
@@ -153,8 +150,8 @@ public:
 	virtual bool is_immediate() const {return true;}
 	virtual bool is_easy_to_negative() const {return true;}
 	virtual T get_immediate_value() const {return value;}
-
 	virtual void show_immediate_value() const {std::cout << ' ' << value;}
+
 	virtual bool merge_with(char other_op, data_exp_ctype<T>& other_exp)
 		{return other_exp->is_immediate() ? merge(other_op, other_exp->get_immediate_value()) : false;}
 	virtual data_exp_type<T> to_negative() const {return std::make_shared<immediate_data_exp<T>>(-value);}
@@ -243,8 +240,8 @@ public:
 	virtual char get_operator() const {return op;}
 	virtual data_exp_ctype<T>& get_left_item() const {return dexp_l;}
 	virtual data_exp_ctype<T>& get_right_item() const {return dexp_r;}
-
 	virtual void show_immediate_value() const {dexp_l->show_immediate_value(); dexp_r->show_immediate_value();}
+
 	virtual bool merge_with(char other_op, data_exp_ctype<T>& other_exp)
 	{
 		if (is_same_operator_level<O>(op, other_op))
@@ -538,6 +535,7 @@ public:
 
 	virtual bool is_easy_to_negative() const {return true;}
 	virtual bool is_negative() const {return true;}
+
 	virtual data_exp_type<T> to_negative() const {return variable_data_exp<T>::clone();}
 
 	virtual T operator()(const std::function<T(const std::string&)>& cb) const {return -variable_data_exp<T>::operator()(cb);}
@@ -578,6 +576,7 @@ public:
 
 	virtual bool is_easy_to_negative() const {return true;}
 	virtual bool is_negative() const {return true;}
+
 	virtual data_exp_type<T> to_negative() const {return exponent_data_exp<T>::clone();}
 
 	virtual T operator()(const std::function<T(const std::string&)>& cb) const {return -exponent_data_exp<T>::operator()(cb);}
@@ -594,7 +593,6 @@ public:
 	virtual int get_exponent() const {return exponent;}
 	virtual T get_multiplier() const {return multiplier;}
 	virtual const std::string& get_variable_name() const {return variable_name;}
-
 	virtual void show_immediate_value() const {std::cout << ' ' << multiplier << ' ' << exponent;}
 
 	virtual bool merge_with(char other_op, data_exp_ctype<T>& other_exp)
@@ -1112,6 +1110,7 @@ public:
 
 	virtual int get_depth() const {return 1 + jexp->get_depth();}
 	virtual void show_immediate_value() const {jexp->show_immediate_value();}
+
 	virtual judge_exp_type<T> final_optimize() {return jexp->final_optimize();}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return !(*jexp)(cb);}
@@ -1134,8 +1133,8 @@ public:
 	virtual judge_exp_ctype<T>& get_left_item() const {return jexp_l;}
 	virtual judge_exp_ctype<T>& get_right_item() const {return jexp_r;}
 	virtual int get_depth() const {return 1 + std::max(jexp_l->get_depth(), jexp_l->get_depth());}
-
 	virtual void show_immediate_value() const {jexp_l->show_immediate_value(); jexp_r->show_immediate_value();}
+
 	virtual judge_exp_type<T> final_optimize()
 	{
 		jexp_l->final_optimize();
@@ -1191,6 +1190,7 @@ public:
 	virtual int get_depth() const {return 1 + std::max(jexp->get_depth(), std::max(dexp_l->get_depth(), dexp_r->get_depth()));}
 	virtual void show_immediate_value() const
 		{jexp->show_immediate_value(); dexp_l->show_immediate_value(); dexp_r->show_immediate_value();}
+
 	virtual data_exp_type<T> final_optimize()
 	{
 		jexp->final_optimize();
@@ -1208,11 +1208,9 @@ public:
 	virtual data_exp_type<T> to_negative() const {return std::make_shared<negative_question_exp<T>>(jexp, dexp_l, dexp_r);}
 
 	virtual T operator()(const std::function<T(const std::string&)>& cb) const {return (*jexp)(cb) ? (*dexp_l)(cb) : (*dexp_r)(cb);}
-
 	//for question_exp, recursion still happens here if this question_exp is a sub expression
 	virtual T safe_execute(const std::function<T(const std::string&)>& cb) const
 		{return qme::safe_execute(jexp, cb) ? qme::safe_execute(dexp_l, cb) : qme::safe_execute(dexp_r, cb);}
-
 	//for question_exp, recursion still happens here if this question_exp is a sub expression
 	virtual void safe_delete() const {qme::safe_delete(jexp); qme::safe_delete(dexp_l); qme::safe_delete(dexp_r);}
 
@@ -1232,10 +1230,10 @@ public:
 
 	virtual bool is_easy_to_negative() const {return true;}
 	virtual bool is_negative() const {return true;}
+
 	virtual data_exp_type<T> to_negative() const {return question_exp<T>::clone();}
 
 	virtual T operator()(const std::function<T(const std::string&)>& cb) const {return -question_exp<T>::operator()(cb);}
-
 	virtual T safe_execute(const std::function<T(const std::string&)>& cb) const {return -question_exp<T>::safe_execute(cb);}
 };
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -1243,18 +1241,18 @@ public:
 template <typename T, typename O, template<typename> class Exp>
 inline std::shared_ptr<Exp<T>> final_optimize(const std::shared_ptr<Exp<T>>& exp)
 {
-	auto re = exp;
-	if (O::level() > 1)
-	{
-		auto final_re = re->final_optimize();
-		if (final_re)
-			re = final_re;
+	if (O::level() < 2)
+		return exp;
+
+	auto re = exp->final_optimize();
+	if (!re)
+		re = exp;
+
 #ifdef DEBUG
-		printf(" max depth: %d\n immediate values:", re->get_depth());
-		re->show_immediate_value();
-		putchar('\n');
+	printf(" max depth: %d\n immediate values:", re->get_depth());
+	re->show_immediate_value();
+	putchar('\n');
 #endif
-	}
 
 	return re;
 }
