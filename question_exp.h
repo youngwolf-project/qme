@@ -444,7 +444,7 @@ private:
 template <typename T, typename O> class add_data_exp : public binary_data_exp<T, O>
 {
 public:
-	add_data_exp(data_exp_ctype<T>& _dexp_l, data_exp_ctype<T>& _dexp_r) : binary_data_exp<T, O>(_dexp_l, _dexp_r, '+') {}
+	add_data_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) : binary_data_exp<T, O>(dexp_l, dexp_r, '+') {}
 
 	virtual T operator()(const std::function<T(const std::string&)>& cb) const
 		{return (*binary_data_exp<T, O>::get_left_item())(cb) + (*binary_data_exp<T, O>::get_right_item())(cb);}
@@ -453,7 +453,7 @@ public:
 template <typename T, typename O> class sub_data_exp : public binary_data_exp<T, O>
 {
 public:
-	sub_data_exp(data_exp_ctype<T>& _dexp_l, data_exp_ctype<T>& _dexp_r) : binary_data_exp<T, O>(_dexp_l, _dexp_r, '-') {}
+	sub_data_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) : binary_data_exp<T, O>(dexp_l, dexp_r, '-') {}
 
 	virtual T operator()(const std::function<T(const std::string&)>& cb) const
 		{return (*binary_data_exp<T, O>::get_left_item())(cb) - (*binary_data_exp<T, O>::get_right_item())(cb);}
@@ -462,7 +462,7 @@ public:
 template <typename T, typename O> class multi_data_exp : public binary_data_exp<T, O>
 {
 public:
-	multi_data_exp(data_exp_ctype<T>& _dexp_l, data_exp_ctype<T>& _dexp_r) : binary_data_exp<T, O>(_dexp_l, _dexp_r, '*') {}
+	multi_data_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) : binary_data_exp<T, O>(dexp_l, dexp_r, '*') {}
 
 	virtual T operator()(const std::function<T(const std::string&)>& cb) const
 		{return (*binary_data_exp<T, O>::get_left_item())(cb) * (*binary_data_exp<T, O>::get_right_item())(cb);}
@@ -471,7 +471,7 @@ public:
 template <typename T, typename O> class div_data_exp : public binary_data_exp<T, O>
 {
 public:
-	div_data_exp(data_exp_ctype<T>& _dexp_l, data_exp_ctype<T>& _dexp_r) : binary_data_exp<T, O>(_dexp_l, _dexp_r, '/') {}
+	div_data_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) : binary_data_exp<T, O>(dexp_l, dexp_r, '/') {}
 
 	virtual T operator()(const std::function<T(const std::string&)>& cb) const
 	{
@@ -517,7 +517,7 @@ private:
 template <typename T> class negative_variable_data_exp : public variable_data_exp<T>
 {
 public:
-	negative_variable_data_exp(const std::string& _variable_name) : variable_data_exp<T>(_variable_name) {}
+	negative_variable_data_exp(const std::string& variable_name) : variable_data_exp<T>(variable_name) {}
 
 	virtual bool is_easy_to_negative() const {return true;}
 	virtual bool is_negative() const {return true;}
@@ -558,7 +558,7 @@ private:
 template <typename T> class negative_exponent_data_exp : public exponent_data_exp<T>
 {
 public:
-	negative_exponent_data_exp(const std::string& _variable_name, int _exponent) : exponent_data_exp<T>(_variable_name, _exponent) {}
+	negative_exponent_data_exp(const std::string& variable_name, int exponent) : exponent_data_exp<T>(variable_name, exponent) {}
 
 	virtual bool is_easy_to_negative() const {return true;}
 	virtual bool is_negative() const {return true;}
@@ -969,7 +969,7 @@ protected:
 template <typename T> class equal_0_judge_exp : public unitary_judge_exp<T>
 {
 public:
-	equal_0_judge_exp(data_exp_ctype<T>& _dexp) : unitary_judge_exp<T>(_dexp) {}
+	equal_0_judge_exp(data_exp_ctype<T>& dexp) : unitary_judge_exp<T>(dexp) {}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return 0 == (*this->dexp)(cb);}
 	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const {return 0 == qme::safe_execute(this->dexp, cb);}
@@ -978,7 +978,7 @@ public:
 template <typename T> class not_equal_0_judge_exp : public unitary_judge_exp<T>
 {
 public:
-	not_equal_0_judge_exp(data_exp_ctype<T>& _dexp) : unitary_judge_exp<T>(_dexp) {}
+	not_equal_0_judge_exp(data_exp_ctype<T>& dexp) : unitary_judge_exp<T>(dexp) {}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return 0 != (*this->dexp)(cb);}
 	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const {return 0 != qme::safe_execute(this->dexp, cb);}
@@ -1012,7 +1012,7 @@ protected:
 template <typename T> class bigger_judge_exp : public binary_judge_exp<T>
 {
 public:
-	bigger_judge_exp(data_exp_ctype<T>& _dexp_l, data_exp_ctype<T>& _dexp_r) : binary_judge_exp<T>(_dexp_l, _dexp_r) {}
+	bigger_judge_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) : binary_judge_exp<T>(dexp_l, dexp_r) {}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) > (*this->dexp_r)(cb);}
 	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const
@@ -1022,7 +1022,7 @@ public:
 template <typename T> class bigger_equal_judge_exp : public binary_judge_exp<T>
 {
 public:
-	bigger_equal_judge_exp(data_exp_ctype<T>& _dexp_l, data_exp_ctype<T>& _dexp_r) : binary_judge_exp<T>(_dexp_l, _dexp_r) {}
+	bigger_equal_judge_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) : binary_judge_exp<T>(dexp_l, dexp_r) {}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) >= (*this->dexp_r)(cb);}
 	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const
@@ -1032,7 +1032,7 @@ public:
 template <typename T> class smaller_judge_exp : public binary_judge_exp<T>
 {
 public:
-	smaller_judge_exp(data_exp_ctype<T>& _dexp_l, data_exp_ctype<T>& _dexp_r) : binary_judge_exp<T>(_dexp_l, _dexp_r) {}
+	smaller_judge_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) : binary_judge_exp<T>(dexp_l, dexp_r) {}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) < (*this->dexp_r)(cb);}
 	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const
@@ -1042,7 +1042,7 @@ public:
 template <typename T> class smaller_equal_judge_exp : public binary_judge_exp<T>
 {
 public:
-	smaller_equal_judge_exp(data_exp_ctype<T>& _dexp_l, data_exp_ctype<T>& _dexp_r) : binary_judge_exp<T>(_dexp_l, _dexp_r) {}
+	smaller_equal_judge_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) : binary_judge_exp<T>(dexp_l, dexp_r) {}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) <= (*this->dexp_r)(cb);}
 	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const
@@ -1052,7 +1052,7 @@ public:
 template <typename T> class equal_judge_exp : public binary_judge_exp<T>
 {
 public:
-	equal_judge_exp(data_exp_ctype<T>& _dexp_l, data_exp_ctype<T>& _dexp_r) : binary_judge_exp<T>(_dexp_l, _dexp_r) {}
+	equal_judge_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) : binary_judge_exp<T>(dexp_l, dexp_r) {}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) == (*this->dexp_r)(cb);}
 	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const
@@ -1062,7 +1062,7 @@ public:
 template <typename T> class not_equal_judge_exp : public binary_judge_exp<T>
 {
 public:
-	not_equal_judge_exp(data_exp_ctype<T>& _dexp_l, data_exp_ctype<T>& _dexp_r) : binary_judge_exp<T>(_dexp_l, _dexp_r) {}
+	not_equal_judge_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) : binary_judge_exp<T>(dexp_l, dexp_r) {}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) != (*this->dexp_r)(cb);}
 	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const
@@ -1133,7 +1133,7 @@ private:
 template <typename T> class and_judge_exp : public logical_exp<T>
 {
 public:
-	and_judge_exp(judge_exp_ctype<T>& _jexp_l, judge_exp_ctype<T>& _jexp_r) : logical_exp<T>(_jexp_l, _jexp_r, "&&") {}
+	and_judge_exp(judge_exp_ctype<T>& jexp_l, judge_exp_ctype<T>& jexp_r) : logical_exp<T>(jexp_l, jexp_r, "&&") {}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const
 		{return (*logical_exp<T>::get_left_item())(cb) && (*logical_exp<T>::get_right_item())(cb);}
@@ -1142,7 +1142,7 @@ public:
 template <typename T> class or_judge_exp : public logical_exp<T>
 {
 public:
-	or_judge_exp(judge_exp_ctype<T>& _jexp_l, judge_exp_ctype<T>& _jexp_r) : logical_exp<T>(_jexp_l, _jexp_r, "||") {}
+	or_judge_exp(judge_exp_ctype<T>& jexp_l, judge_exp_ctype<T>& jexp_r) : logical_exp<T>(jexp_l, jexp_r, "||") {}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const
 		{return (*logical_exp<T>::get_left_item())(cb) || (*logical_exp<T>::get_right_item())(cb);}
@@ -1200,8 +1200,8 @@ private:
 template <typename T> class negative_question_exp : public question_exp<T>
 {
 public:
-	negative_question_exp(judge_exp_ctype<T>& _jexp, data_exp_ctype<T>& _dexp_l, data_exp_ctype<T>& _dexp_r) :
-		question_exp<T>(_jexp, _dexp_l, _dexp_r) {}
+	negative_question_exp(judge_exp_ctype<T>& jexp, data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) :
+		question_exp<T>(jexp, dexp_l, dexp_r) {}
 
 	virtual bool is_easy_to_negative() const {return true;}
 	virtual bool is_negative() const {return true;}
