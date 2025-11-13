@@ -99,6 +99,7 @@ private:
 template <typename T> class data_exp;
 template <typename T> using data_exp_type = std::shared_ptr<data_exp<T>>;
 template <typename T> using data_exp_ctype = const data_exp_type<T>;
+template <typename T> inline T safe_execute(data_exp_ctype<T>&, const std::function<T(const std::string&)>&);
 template <typename T> class data_exp : public exp
 {
 public:
@@ -127,7 +128,7 @@ public:
 	virtual T operator()(const std::function<T(const std::string&)>&) const = 0;
 
 private:
-	template <typename TT> friend inline TT safe_execute(data_exp_ctype<TT>&, const std::function<TT(const std::string&)>&);
+	friend T safe_execute<T>(data_exp_ctype<T>&, const std::function<T(const std::string&)>&);
 	virtual T safe_execute(const std::function<T(const std::string&)>& cb) const {return operator()(cb);}
 };
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -921,6 +922,7 @@ template <typename T, template<typename> class Exp> inline void safe_delete(cons
 template <typename T> class judge_exp;
 template <typename T> using judge_exp_type = std::shared_ptr<judge_exp<T>>;
 template <typename T> using judge_exp_ctype = const judge_exp_type<T>;
+template <typename T> inline bool safe_execute(judge_exp_ctype<T>&, const std::function<T(const std::string&)>&);
 template <typename T> class judge_exp : public exp
 {
 public:
@@ -934,7 +936,7 @@ public:
 	virtual bool operator()(const std::function<T(const std::string&)>&) const = 0;
 
 private:
-	template <typename TT> friend inline bool safe_execute(judge_exp_ctype<TT>&, const std::function<TT(const std::string&)>&);
+	friend bool safe_execute<T>(judge_exp_ctype<T>&, const std::function<T(const std::string&)>&);
 	//is recursion fully eliminated or not depends on the data_exp(s) this judge_exp holds
 	virtual bool safe_execute(const std::function<T(const std::string&)>&) const = 0;
 };
@@ -1193,6 +1195,8 @@ inline judge_exp_type<T> merge_judge_exp(judge_exp_ctype<T>& jexp_l, judge_exp_c
 template <typename T> class negative_question_exp;
 template <typename T> class question_exp : public data_exp<T>
 {
+	friend class negative_question_exp<T>;
+
 public:
 	question_exp(judge_exp_ctype<T>& _jexp, data_exp_ctype<T>& _dexp_l, data_exp_ctype<T>& _dexp_r) :
 		jexp(_jexp), dexp_l(_dexp_l), dexp_r(_dexp_r) {}
@@ -1217,7 +1221,6 @@ protected:
 	data_exp_type<T> clone() const {return std::make_shared<question_exp<T>>(jexp, dexp_l, dexp_r);}
 
 private:
-	template <typename TT> friend TT negative_question_exp<TT>::safe_execute(const std::function<TT(const std::string&)>&) const;
 	//for question_exp, recursion still happens here if this question_exp is a sub expression
 	virtual T safe_execute(const std::function<T(const std::string&)>& cb) const
 		{return qme::safe_execute(jexp, cb) ? qme::safe_execute(dexp_l, cb) : qme::safe_execute(dexp_r, cb);}
