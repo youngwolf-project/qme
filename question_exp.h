@@ -88,8 +88,11 @@ public:
 	virtual bool is_composite() const {return false;}
 	virtual int get_depth() const {return 1;}
 	virtual void show_immediate_value() const {}
-	virtual void safe_delete() const {} //used in qme::safe_delete function, do not call it directly
-	virtual void clear() {} //used in qme::safe_delete function, do not call it directly
+
+private:
+	template <typename T, template<typename> class Exp> friend inline void safe_delete(const std::shared_ptr<Exp<T>>&);
+	virtual void safe_delete() const {}
+	virtual void clear() {}
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -122,7 +125,9 @@ public:
 	virtual data_exp_type<T> final_optimize() const {return data_exp_type<T>();}
 
 	virtual T operator()(const std::function<T(const std::string&)>&) const = 0;
-	//used in qme::safe_execute function, do not call it directly
+
+private:
+	template <typename TT> friend inline TT safe_execute(data_exp_ctype<TT>&, const std::function<TT(const std::string&)>&);
 	virtual T safe_execute(const std::function<T(const std::string&)>& cb) const {return operator()(cb);}
 };
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -433,6 +438,7 @@ public:
 		return (l || r) ? merge_data_exp<T, O>(l ? l : dexp_l, r ? r : dexp_r, op) : data_exp_type<T>();
 	}
 
+private:
 	virtual T safe_execute(const std::function<T(const std::string&)>&) const {throw("unsupported safe execute operation!");}
 	virtual void clear() {dexp_l.reset(); dexp_r.reset();}
 
@@ -926,8 +932,10 @@ public:
 	virtual void final_optimize() = 0;
 
 	virtual bool operator()(const std::function<T(const std::string&)>&) const = 0;
+
+private:
+	template <typename TT> friend inline bool safe_execute(judge_exp_ctype<TT>&, const std::function<TT(const std::string&)>&);
 	//is recursion fully eliminated or not depends on the data_exp(s) this judge_exp holds
-	//used in qme::safe_execute function, do not call it directly
 	virtual bool safe_execute(const std::function<T(const std::string&)>&) const = 0;
 };
 
@@ -960,6 +968,7 @@ public:
 			dexp = data;
 	}
 
+private:
 	virtual void safe_delete() const {qme::safe_delete(dexp);}
 
 protected:
@@ -972,6 +981,8 @@ public:
 	equal_0_judge_exp(data_exp_ctype<T>& dexp) : unitary_judge_exp<T>(dexp) {}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return 0 == (*this->dexp)(cb);}
+
+private:
 	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const {return 0 == qme::safe_execute(this->dexp, cb);}
 };
 
@@ -981,6 +992,8 @@ public:
 	not_equal_0_judge_exp(data_exp_ctype<T>& dexp) : unitary_judge_exp<T>(dexp) {}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return 0 != (*this->dexp)(cb);}
+
+private:
 	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const {return 0 != qme::safe_execute(this->dexp, cb);}
 };
 
@@ -1003,6 +1016,7 @@ public:
 			dexp_r = data;
 	}
 
+private:
 	virtual void safe_delete() const {qme::safe_delete(dexp_l); qme::safe_delete(dexp_r);}
 
 protected:
@@ -1015,6 +1029,8 @@ public:
 	bigger_judge_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) : binary_judge_exp<T>(dexp_l, dexp_r) {}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) > (*this->dexp_r)(cb);}
+
+private:
 	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const
 		{return qme::safe_execute(this->dexp_l, cb) > qme::safe_execute(this->dexp_r, cb);}
 };
@@ -1025,6 +1041,8 @@ public:
 	bigger_equal_judge_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) : binary_judge_exp<T>(dexp_l, dexp_r) {}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) >= (*this->dexp_r)(cb);}
+
+private:
 	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const
 		{return qme::safe_execute(this->dexp_l, cb) >= qme::safe_execute(this->dexp_r, cb);}
 };
@@ -1035,6 +1053,8 @@ public:
 	smaller_judge_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) : binary_judge_exp<T>(dexp_l, dexp_r) {}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) < (*this->dexp_r)(cb);}
+
+private:
 	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const
 		{return qme::safe_execute(this->dexp_l, cb) < qme::safe_execute(this->dexp_r, cb);}
 };
@@ -1045,6 +1065,8 @@ public:
 	smaller_equal_judge_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) : binary_judge_exp<T>(dexp_l, dexp_r) {}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) <= (*this->dexp_r)(cb);}
+
+private:
 	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const
 		{return qme::safe_execute(this->dexp_l, cb) <= qme::safe_execute(this->dexp_r, cb);}
 };
@@ -1055,6 +1077,8 @@ public:
 	equal_judge_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) : binary_judge_exp<T>(dexp_l, dexp_r) {}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) == (*this->dexp_r)(cb);}
+
+private:
 	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const
 		{return qme::safe_execute(this->dexp_l, cb) == qme::safe_execute(this->dexp_r, cb);}
 };
@@ -1065,6 +1089,8 @@ public:
 	not_equal_judge_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) : binary_judge_exp<T>(dexp_l, dexp_r) {}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) != (*this->dexp_r)(cb);}
+
+private:
 	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const
 		{return qme::safe_execute(this->dexp_l, cb) != qme::safe_execute(this->dexp_r, cb);}
 };
@@ -1099,6 +1125,8 @@ public:
 	virtual void final_optimize() {jexp->final_optimize();}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return !(*jexp)(cb);}
+
+private:
 	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const {return !qme::safe_execute(jexp, cb);}
 	virtual void safe_delete() const {qme::safe_delete(jexp);}
 
@@ -1122,6 +1150,7 @@ public:
 
 	virtual void final_optimize() {jexp_l->final_optimize(); jexp_r->final_optimize();}
 
+private:
 	virtual bool safe_execute(const std::function<T(const std::string&)>&) const {throw("unsupported safe execute operation!");}
 	virtual void clear() {jexp_l.reset(); jexp_r.reset();}
 
@@ -1183,14 +1212,17 @@ public:
 	virtual data_exp_type<T> to_negative() const {return std::make_shared<negative_question_exp<T>>(jexp, dexp_l, dexp_r);}
 
 	virtual T operator()(const std::function<T(const std::string&)>& cb) const {return (*jexp)(cb) ? (*dexp_l)(cb) : (*dexp_r)(cb);}
+
+protected:
+	data_exp_type<T> clone() const {return std::make_shared<question_exp<T>>(jexp, dexp_l, dexp_r);}
+
+private:
+	template <typename TT> friend TT negative_question_exp<TT>::safe_execute(const std::function<TT(const std::string&)>&) const;
 	//for question_exp, recursion still happens here if this question_exp is a sub expression
 	virtual T safe_execute(const std::function<T(const std::string&)>& cb) const
 		{return qme::safe_execute(jexp, cb) ? qme::safe_execute(dexp_l, cb) : qme::safe_execute(dexp_r, cb);}
 	//for question_exp, recursion still happens here if this question_exp is a sub expression
 	virtual void safe_delete() const {qme::safe_delete(jexp); qme::safe_delete(dexp_l); qme::safe_delete(dexp_r);}
-
-protected:
-	data_exp_type<T> clone() const {return std::make_shared<question_exp<T>>(jexp, dexp_l, dexp_r);}
 
 private:
 	judge_exp_type<T> jexp;
@@ -1210,6 +1242,8 @@ public:
 	virtual data_exp_type<T> to_negative() const {return question_exp<T>::clone();}
 
 	virtual T operator()(const std::function<T(const std::string&)>& cb) const {return -question_exp<T>::operator()(cb);}
+
+private:
 	virtual T safe_execute(const std::function<T(const std::string&)>& cb) const {return -question_exp<T>::safe_execute(cb);}
 };
 /////////////////////////////////////////////////////////////////////////////////////////
