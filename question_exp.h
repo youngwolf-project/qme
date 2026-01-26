@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <type_traits>
 #include <functional>
 #include <iostream>
 #include <string>
@@ -931,6 +932,7 @@ public:
 	virtual judge_exp_ctype<T>& get_left_item() const {throw("unsupported get left item operation!");}
 	virtual judge_exp_ctype<T>& get_right_item() const {throw("unsupported get right item operation!");}
 
+	virtual judge_exp_type<T> revert() const = 0;
 	virtual void final_optimize() = 0;
 
 	virtual bool operator()(const std::function<T(const std::string&)>&) const = 0;
@@ -977,10 +979,13 @@ protected:
 	data_exp_type<T> dexp;
 };
 
-template <typename T> class equal_0_judge_exp : public unitary_judge_exp<T>
+template <typename T> class not_equal_0_judge_exp;
+template <typename T> class equal_0_judge_exp : public unitary_judge_exp<T> //intentional optimization for !a ? b : c, for a > 0 .etc, use binary_judge_exp
 {
 public:
 	equal_0_judge_exp(data_exp_ctype<T>& dexp) : unitary_judge_exp<T>(dexp) {}
+
+	virtual judge_exp_type<T> revert() const {return std::make_shared<not_equal_0_judge_exp<T>>(this->dexp);}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return 0 == (*this->dexp)(cb);}
 
@@ -988,10 +993,12 @@ private:
 	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const {return 0 == qme::safe_execute(this->dexp, cb);}
 };
 
-template <typename T> class not_equal_0_judge_exp : public unitary_judge_exp<T>
+template <typename T> class not_equal_0_judge_exp : public unitary_judge_exp<T> //intentional optimization for a ? b : c, for a < 0 .etc, use binary_judge_exp
 {
 public:
 	not_equal_0_judge_exp(data_exp_ctype<T>& dexp) : unitary_judge_exp<T>(dexp) {}
+
+	virtual judge_exp_type<T> revert() const {return std::make_shared<equal_0_judge_exp<T>>(this->dexp);}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return 0 != (*this->dexp)(cb);}
 
@@ -1025,10 +1032,13 @@ protected:
 	data_exp_type<T> dexp_l, dexp_r;
 };
 
+template <typename T> class smaller_equal_judge_exp;
 template <typename T> class bigger_judge_exp : public binary_judge_exp<T>
 {
 public:
 	bigger_judge_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) : binary_judge_exp<T>(dexp_l, dexp_r) {}
+
+	virtual judge_exp_type<T> revert() const {return std::make_shared<smaller_equal_judge_exp<T>>(this->dexp_l, this->dexp_r);}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) > (*this->dexp_r)(cb);}
 
@@ -1037,10 +1047,13 @@ private:
 		{return qme::safe_execute(this->dexp_l, cb) > qme::safe_execute(this->dexp_r, cb);}
 };
 
+template <typename T> class smaller_judge_exp;
 template <typename T> class bigger_equal_judge_exp : public binary_judge_exp<T>
 {
 public:
 	bigger_equal_judge_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) : binary_judge_exp<T>(dexp_l, dexp_r) {}
+
+	virtual judge_exp_type<T> revert() const {return std::make_shared<smaller_judge_exp<T>>(this->dexp_l, this->dexp_r);}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) >= (*this->dexp_r)(cb);}
 
@@ -1054,6 +1067,8 @@ template <typename T> class smaller_judge_exp : public binary_judge_exp<T>
 public:
 	smaller_judge_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) : binary_judge_exp<T>(dexp_l, dexp_r) {}
 
+	virtual judge_exp_type<T> revert() const {return std::make_shared<bigger_equal_judge_exp<T>>(this->dexp_l, this->dexp_r);}
+
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) < (*this->dexp_r)(cb);}
 
 private:
@@ -1066,6 +1081,8 @@ template <typename T> class smaller_equal_judge_exp : public binary_judge_exp<T>
 public:
 	smaller_equal_judge_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) : binary_judge_exp<T>(dexp_l, dexp_r) {}
 
+	virtual judge_exp_type<T> revert() const {return std::make_shared<bigger_judge_exp<T>>(this->dexp_l, this->dexp_r);}
+
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) <= (*this->dexp_r)(cb);}
 
 private:
@@ -1073,10 +1090,13 @@ private:
 		{return qme::safe_execute(this->dexp_l, cb) <= qme::safe_execute(this->dexp_r, cb);}
 };
 
+template <typename T> class not_equal_judge_exp;
 template <typename T> class equal_judge_exp : public binary_judge_exp<T>
 {
 public:
 	equal_judge_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) : binary_judge_exp<T>(dexp_l, dexp_r) {}
+
+	virtual judge_exp_type<T> revert() const {return std::make_shared<not_equal_judge_exp<T>>(this->dexp_l, this->dexp_r);}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) == (*this->dexp_r)(cb);}
 
@@ -1089,6 +1109,8 @@ template <typename T> class not_equal_judge_exp : public binary_judge_exp<T>
 {
 public:
 	not_equal_judge_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) : binary_judge_exp<T>(dexp_l, dexp_r) {}
+
+	virtual judge_exp_type<T> revert() const {return std::make_shared<equal_judge_exp<T>>(this->dexp_l, this->dexp_r);}
 
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) != (*this->dexp_r)(cb);}
 
@@ -1116,26 +1138,6 @@ inline judge_exp_type<T> make_binary_judge_exp(data_exp_ctype<T>& dc_1, data_exp
 		throw("unknown compare operator " + c);
 }
 
-template <typename T> class not_judge_exp : public judge_exp<T>
-{
-public:
-	not_judge_exp(judge_exp_ctype<T>& _jexp) : jexp(_jexp) {}
-
-	virtual int get_depth() const {return 1 + jexp->get_depth();}
-	virtual void show_immediate_value() const {jexp->show_immediate_value();}
-
-	virtual void final_optimize() {jexp->final_optimize();}
-
-	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return !(*jexp)(cb);}
-
-private:
-	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const {return !qme::safe_execute(jexp, cb);}
-	virtual void safe_delete() const {qme::safe_delete(jexp);}
-
-private:
-	judge_exp_type<T> jexp;
-};
-
 template <typename T> class logical_exp : public judge_exp<T>
 {
 protected:
@@ -1161,13 +1163,17 @@ private:
 	judge_exp_type<T> jexp_l, jexp_r;
 };
 
+template <typename T> class or_judge_exp;
 template <typename T> class and_judge_exp : public logical_exp<T>
 {
 public:
 	and_judge_exp(judge_exp_ctype<T>& jexp_l, judge_exp_ctype<T>& jexp_r) : logical_exp<T>(jexp_l, jexp_r, "&&") {}
 
+	virtual judge_exp_type<T> revert() const
+		{return std::make_shared<or_judge_exp<T>>(this->get_left_item()->revert(), this->get_right_item()->revert());}
+
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const
-		{return (*logical_exp<T>::get_left_item())(cb) && (*logical_exp<T>::get_right_item())(cb);}
+		{return (*this->get_left_item())(cb) && (*this->get_right_item())(cb);}
 };
 
 template <typename T> class or_judge_exp : public logical_exp<T>
@@ -1175,8 +1181,11 @@ template <typename T> class or_judge_exp : public logical_exp<T>
 public:
 	or_judge_exp(judge_exp_ctype<T>& jexp_l, judge_exp_ctype<T>& jexp_r) : logical_exp<T>(jexp_l, jexp_r, "||") {}
 
+	virtual judge_exp_type<T> revert() const
+		{return std::make_shared<and_judge_exp<T>>(this->get_left_item()->revert(), this->get_right_item()->revert());}
+
 	virtual bool operator()(const std::function<T(const std::string&)>& cb) const
-		{return (*logical_exp<T>::get_left_item())(cb) || (*logical_exp<T>::get_right_item())(cb);}
+		{return (*this->get_left_item())(cb) || (*this->get_right_item())(cb);}
 };
 
 template <typename T>
@@ -1543,7 +1552,7 @@ private:
 		return items;
 	}
 
-	static void finish_data_exp(data_exp_type<T>& data_1, data_exp_type<T>& data_2, std::string& op_1, std::string& op_2)
+	static void finish_data_exp(data_exp_type<T>& data_1, data_exp_type<T>& data_2, std::string& op_1, const std::string& op_2)
 	{
 		if (!op_2.empty())
 			throw("missing operand!");
@@ -1559,7 +1568,7 @@ private:
 	}
 
 	static void finish_data_exp(data_exp_type<T>& data_1, data_exp_type<T>& data_2,
-		std::string& op_1, std::string& op_2, data_exp_type<T>& dc)
+		std::string& op_1, const std::string& op_2, data_exp_type<T>& dc)
 	{
 		finish_data_exp(data_1, data_2, op_1, op_2);
 		dc = data_1;
@@ -1643,10 +1652,17 @@ private:
 				return std::make_shared<variable_data_exp<T>>(vov);
 			return std::make_shared<composite_variable_data_exp<T, O>>(vov);
 		}
-		else if (std::string::npos != vov.find('.') || std::string::npos != vov.find('e') || std::string::npos != vov.find('E'))
-			return std::make_shared<immediate_data_exp<T>>((T) atof(vov.data())); //todo, verify float data
+
+		T value;
+		char* endptr;
+		if (std::is_same<T, float>::value || std::is_same<T, double>::value)
+			value = (T) strtod(vov.data(), &endptr); //(T) atof(vov.data())
 		else
-			return std::make_shared<immediate_data_exp<T>>((T) atoll(vov.data())); //todo, verify integer data
+			value = (T) strtoll(vov.data(), &endptr, 10); //(T) atoll(vov.data())
+
+		if ('\0' != *endptr)
+			throw("invalid immediate data " + vov);
+		return std::make_shared<immediate_data_exp<T>>(value);
 	}
 
 	static exp_type compile(const std::vector<std::string>& items, const std::map<std::string, sub_exp>& sub_exps,
@@ -1846,7 +1862,7 @@ private:
 							parsed_exp = std::make_shared<not_equal_0_judge_exp<T>>(data);
 					}
 					else if (1 == (revert & 1))
-						parsed_exp = std::make_shared<not_judge_exp<T>>(std::dynamic_pointer_cast<judge_exp<T>>(parsed_exp));
+						parsed_exp = std::dynamic_pointer_cast<judge_exp<T>>(parsed_exp)->revert();
 
 					revert = 0;
 				}
