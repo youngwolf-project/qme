@@ -54,7 +54,7 @@ int main(int argc, const char* argv[])
 {
 	const ut_input_and_expectation<> inputs[] = {
 		//test merging of immediate values at compilation time (O3)
-		//for O2, immediate values can be different, please note
+		//for O2, immediate values can be different, please note. so 5 UT cases will fail, and 2 UT cases cannot run (divide zero)
 		{"a ? a + 1 + 2 + 3 : 0", -94.f, 106.f}, //immediate values: 6, 0
 		{"a ? a + 1 / 2 + 3 : 0", -96.5f, 103.5f}, //immediate values: 3.5, 0
 		{"a ? a / 1 / 2 + 3 : 0", -47.f, 53.f}, //immediate values: 0.5, 3, 0
@@ -157,14 +157,26 @@ int main(int argc, const char* argv[])
 		{"1 + 2 + 3 + 4 + 5 + 6", 21.f, 21.f},
 		{"1 + (2 + (3 + (4 + (5 + 6)))) + 7 + 8 + 9", 45.f, 45.f},
 
-		//following expressions are supposed to be invalid:
+		//judge expression can also be a data expression
 		{"!a"},
+		{"-(a > 0) ? a : b", 1.f, 100.f},
+		{"+(a > 0) ? a : b", 1.f, 100.f},
+		{"a > 0", 0, 1},
+		{"a > 0 ? (b > 0) : 1", 1, 0},
+		{"(a > 0) + (b > 0) + (c > 0) + c > 0 ? 1 : 2", 1.f, 2.f},
+		{"(a > 0 || b > 0) + c", 12.f, -10.f},
+		{"a > 0 || (b > 0) + c", 1.f, 1.f},
+		{"a > 0 || (b > 0) - b", 0.f, 1.f},
+		{"!!!-!-a", 1.f, 1.f},
+		{"-!-!!!a", -1.f, -1.f},
+		{"a > 0 || b > 0 || + c", 1.f, 1.f},
+		{"a > 0 ? a > 0 || b > 0 || + c : b + c", 12.f, 1.f},
+
+		//following expressions (13 entries) are supposed to be invalid:
 		{"?a"},
 		{":a"},
 		{"a : b"},
 		{"(a >) 0 ? a : b"},
-		{"-(a > 0) ? a : b"},
-		{"+(a > 0) ? a : b"},
 		{"(a > 0) ? a : b +"},
 		{"(a > 0) ? a + : b"},
 		{"a : b ? c : 0"},
@@ -174,8 +186,6 @@ int main(int argc, const char* argv[])
 		{"a! > 0 ? a : b"},
 		{"!(a > 0) ? a : b : c"},
 		{"!(a > 0) ? a : b : c : 0"},
-		{"-!a ? 1 : 2"},
-		{"+!a ? 1 : 2"},
 	};
 
 	auto cb = [](const std::map<std::string, float>& dm, const std::string& variable_name) {

@@ -2,6 +2,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include <assert.h>
 
 #include <type_traits>
 #include <functional>
@@ -1207,6 +1208,15 @@ template <typename T> class question_exp : public data_exp<T>
 	friend class negative_question_exp<T>;
 
 public:
+	question_exp(judge_exp_ctype<T>& _jexp) : jexp(_jexp)
+	{
+		static const auto _0 = std::make_shared<immediate_data_exp<T>>(0);
+		static const auto _1 = std::make_shared<immediate_data_exp<T>>(1);
+
+		dexp_l = _1;
+		dexp_r = _0;
+	}
+
 	question_exp(judge_exp_ctype<T>& _jexp, data_exp_ctype<T>& _dexp_l, data_exp_ctype<T>& _dexp_r) :
 		jexp(_jexp), dexp_l(_dexp_l), dexp_r(_dexp_r) {}
 
@@ -1272,6 +1282,19 @@ private:
 	};
 
 public:
+	//data exp to judge exp, or judge exp to data exp
+	static exp_type transform_exp(const exp_type& exp)
+	{
+		if (exp->is_data())
+		{
+			auto data = std::dynamic_pointer_cast<data_exp<T>>(exp);
+			return !data ? judge_exp_type<T>() : std::make_shared<not_equal_0_judge_exp<T>>(data);
+		}
+
+		auto judge = std::dynamic_pointer_cast<judge_exp<T>>(exp);
+		return !judge ? data_exp_type<T>() : std::make_shared<question_exp<T>>(judge);
+	}
+
 	template <template<typename> class Exp = data_exp> static std::shared_ptr<Exp<T>> compile(const char* statement)
 		{return compile<Exp>(std::string(statement));}
 	template <template<typename> class Exp = data_exp> static std::shared_ptr<Exp<T>> compile(const std::string& statement)
@@ -1281,6 +1304,8 @@ public:
 			return std::shared_ptr<Exp<T>>();
 
 		auto re = std::dynamic_pointer_cast<Exp<T>>(exp);
+		if (!re)
+			re = std::dynamic_pointer_cast<Exp<T>>(transform_exp(exp));
 		if (!re)
 			puts("\033[31mincomplete expression!\033[0m");
 
@@ -1603,8 +1628,8 @@ private:
 			judge_1 = judge;
 	}
 
-	static void finish_data_and_merge_judge_exp(
-		data_exp_type<T>& data_1, data_exp_type<T>& data_2, std::string& op_1, std::string& op_2, data_exp_type<T>& dc, std::string& c,
+	static void finish_data_and_merge_judge_exp(data_exp_type<T>& dc, std::string& c,
+		data_exp_type<T>& data_1, data_exp_type<T>& data_2, std::string& op_1, std::string& op_2,
 		judge_exp_type<T>& judge_1, judge_exp_type<T>& judge_2, std::string& lop_1, std::string& lop_2)
 	{
 		if (!c.empty())
@@ -1614,6 +1639,47 @@ private:
 			merge_judge_exp(judge_1, judge_2, lop_1, lop_2, make_binary_judge_exp(dc, dc_2, c));
 			dc.reset();
 			c.clear();
+		}
+	}
+
+	static void finish_up(data_exp_type<T>& fd_1, data_exp_type<T>& fd_2, bool first_phase,
+		data_exp_type<T>& data_1, data_exp_type<T>& data_2, std::string& op_1, std::string& op_2,
+		judge_exp_type<T>& judge_1, judge_exp_type<T>& judge_2, std::string& lop_1, std::string& lop_2)
+	{
+		if (data_1)
+			finish_data_exp(data_1, data_2, op_1, op_2);
+
+		if (judge_1)
+		{
+			if (data_1)
+			{
+				assert(!judge_2);
+				judge_2 = std::dynamic_pointer_cast<judge_exp<T>>(transform_exp(data_1));
+				data_1.reset();
+			}
+			finish_judge_exp(judge_1, judge_2, lop_1, lop_2);
+
+			if (first_phase)
+				fd_1 = std::dynamic_pointer_cast<data_exp<T>>(transform_exp(judge_1));
+			else if (fd_1)
+				fd_2 = std::dynamic_pointer_cast<data_exp<T>>(transform_exp(judge_1));
+			else
+				return;
+
+			judge_1.reset();
+		}
+		else if (data_1)
+		{
+			if (first_phase)
+			{
+				assert(!fd_1);
+				fd_1.swap(data_1);
+			}
+			else if (fd_1)
+			{
+				assert(!fd_2);
+				fd_2.swap(data_1);
+			}
 		}
 	}
 
@@ -1655,12 +1721,17 @@ private:
 
 		T value;
 		char* endptr;
+		errno = 0;
 		if (std::is_same<T, float>::value || std::is_same<T, double>::value)
 			value = (T) strtod(vov.data(), &endptr); //(T) atof(vov.data())
 		else
-			value = (T) strtoll(vov.data(), &endptr, 10); //(T) atoll(vov.data())
+		{
+			value = (T) strtoll(vov.data(), &endptr, 0); //(T) atoll(vov.data())
+			if (0 == errno && '\0' != *endptr)
+				value = (T) strtod(vov.data(), &endptr); //(T) atof(vov.data())
+		}
 
-		if ('\0' != *endptr)
+		if (0 != errno || '\0' != *endptr)
 			throw("invalid immediate data " + vov);
 		return std::make_shared<immediate_data_exp<T>>(value);
 	}
@@ -1671,34 +1742,52 @@ private:
 		if (index >= end_index)
 			throw("empty expresson!");
 
-		auto revert = 0;
-		auto negative = false, positive = false, is_q = false, is_c = false;
+		std::vector<char> unary_operators; //!-+
+
 		data_exp_type<T> data_1, data_2;
 		std::string op_1, op_2;
+
+		data_exp_type<T> dc; //merged comparand (from data_1 and data_2 with op_1)
+		std::string c; //comparer
+
 		judge_exp_type<T> judge_1, judge_2;
 		std::string lop_1, lop_2;
-		data_exp_type<T> dc;
-		std::string c;
-		data_exp_type<T> fd_1, fd_2;
+
+		judge_exp_type<T> fj; //for final question exp
+		data_exp_type<T> fd_1, fd_2; //for final question exp
 
 		while (index < end_index)
 		{
 			const auto& item = items[index];
 			if ("!" == item)
 			{
-				if (is_q || is_c)
-					throw("only arithmetic operator can appears after ? or : operator!");
-				else if (negative)
-					throw("unexpected - operator!");
-				else if (positive)
-					throw("unexpected + operator!");
-
-				++revert;
+				unary_operators.push_back('!');
 				++index;
 				continue;
 			}
 			else if (is_operator(item))
 			{
+				data_exp_type<T> data;
+				if (judge_2)
+				{
+					if (lop_2.empty())
+					{
+						data = std::dynamic_pointer_cast<data_exp<T>>(transform_exp(judge_2));
+						judge_2.reset();
+					}
+				}
+				else if (judge_1 && lop_1.empty())
+				{
+					data = std::dynamic_pointer_cast<data_exp<T>>(transform_exp(judge_1));
+					judge_1.reset();
+				}
+
+				if (data)
+				{
+					assert(!data_1 && !data_2);
+					data_1.swap(data);
+				}
+
 				auto check = false;
 				if (data_2)
 				{
@@ -1727,37 +1816,17 @@ private:
 
 				if (check)
 				{
-					if ("-" == item)
-					{
-						if (negative)
-							throw("redundant - operator!");
-						else
-						{
-							negative = true;
-							++index;
-							continue;
-						}
-					}
-					else if ("+" == item)
-					{
-						if (positive)
-							throw("redundant + operator!");
-						else
-						{
-							positive = true;
-							++index;
-							continue;
-						}
-					}
-					else
+					if (!is_operator_1(item))
 						throw("redundant operand!");
+
+					unary_operators.push_back(item[0]);
+					++index;
+					continue;
 				}
 			}
 			else if (is_comparer(item))
 			{
-				if (is_q || is_c)
-					throw("only arithmetic operator can appears after ? or : operator!");
-				else if (!c.empty() || dc)
+				if (!c.empty() || dc)
 					throw("redundant comparer!");
 
 				c = item;
@@ -1765,10 +1834,7 @@ private:
 			}
 			else if (is_logical_operator(item))
 			{
-				if (is_q || is_c)
-					throw("only arithmetic operator can appears after ? or : operator!");
-
-				finish_data_and_merge_judge_exp(data_1, data_2, op_1, op_2, dc, c, judge_1, judge_2, lop_1, lop_2);
+				finish_data_and_merge_judge_exp(dc, c, data_1, data_2, op_1, op_2, judge_1, judge_2, lop_1, lop_2);
 				if (data_1 || data_2)
 				{
 					finish_data_exp(data_1, data_2, op_1, op_2);
@@ -1802,12 +1868,10 @@ private:
 			}
 			else if ("?" == item)
 			{
-				if (is_q)
+				if (fj)
 					throw("redundant ? operator!");
-				else
-					is_q = true;
 
-				finish_data_and_merge_judge_exp(data_1, data_2, op_1, op_2, dc, c, judge_1, judge_2, lop_1, lop_2);
+				finish_data_and_merge_judge_exp(dc, c, data_1, data_2, op_1, op_2, judge_1, judge_2, lop_1, lop_2);
 				if (data_1 || data_2)
 				{
 					finish_data_exp(data_1, data_2, op_1, op_2);
@@ -1816,19 +1880,17 @@ private:
 				}
 
 				finish_judge_exp(judge_1, judge_2, lop_1, lop_2);
+				fj.swap(judge_1);
 			}
 			else if (":" == item)
 			{
-				if (!is_q)
+				if (!fj)
 					throw("missing ? operator!");
-				else if (is_c)
+				else if (fd_1)
 					throw("redundant : operator!");
-				else
-					is_c = true;
 
-				finish_data_exp(data_1, data_2, op_1, op_2);
-				fd_1 = data_1;
-				data_1.reset();
+				finish_data_and_merge_judge_exp(dc, c, data_1, data_2, op_1, op_2, judge_1, judge_2, lop_1, lop_2);
+				finish_up(fd_1, fd_2, true, data_1, data_2, op_1, op_2, judge_1, judge_2, lop_1, lop_2);
 			}
 			else
 			{
@@ -1844,32 +1906,32 @@ private:
 				else
 					parsed_exp = parse_data(item);
 
-				if (parsed_exp->is_data())
+				auto last_operator = '\0';
+				for (auto iter = unary_operators.crbegin(); iter != unary_operators.crend(); ++iter)
 				{
-					if (negative)
-						parsed_exp = std::dynamic_pointer_cast<data_exp<T>>(parsed_exp)->to_negative();
-					negative = positive = false;
-				}
-
-				if (revert > 0)
-				{
-					if (parsed_exp->is_data())
+					if ('!' == *iter)
 					{
-						auto data = std::dynamic_pointer_cast<data_exp<T>>(parsed_exp);
-						if (1 == (revert & 1))
-							parsed_exp = std::make_shared<equal_0_judge_exp<T>>(data);
-						else
-							parsed_exp = std::make_shared<not_equal_0_judge_exp<T>>(data);
-					}
-					else if (1 == (revert & 1))
+						if (parsed_exp->is_data())
+							parsed_exp = transform_exp(parsed_exp);
 						parsed_exp = std::dynamic_pointer_cast<judge_exp<T>>(parsed_exp)->revert();
+					}
+					else
+					{
+						if (*iter == last_operator)
+							throw ("redundant " + std::string(1, last_operator) + " operator!");
 
-					revert = 0;
+						if (parsed_exp->is_judge())
+							parsed_exp = transform_exp(parsed_exp);
+						if ('-' == *iter)
+							parsed_exp = std::dynamic_pointer_cast<data_exp<T>>(parsed_exp)->to_negative();
+					}
+					last_operator = *iter;
 				}
+				unary_operators.clear();
 
-				if (parsed_exp->is_data())
+				if (data_1)
 				{
-					auto data = std::dynamic_pointer_cast<data_exp<T>>(parsed_exp);
+					auto data = std::dynamic_pointer_cast<data_exp<T>>(parsed_exp->is_data() ? parsed_exp : transform_exp(parsed_exp));
 					if (data_2)
 					{
 						if (op_2.empty())
@@ -1878,67 +1940,56 @@ private:
 						data_2 = merge_data_exp<T, O>(data_2, data, op_2);
 						op_2.clear();
 					}
-					else if (data_1)
-					{
-						if (op_1.empty())
-							throw("missing operator!");
-
-						if (is_operator_1(op_1))
-							data_2 = data;
-						else
-						{
-							data_1 = merge_data_exp<T, O>(data_1, data, op_1);
-							op_1.clear();
-						}
-					}
+					else if (op_1.empty())
+						throw("missing operator!");
+					else if (is_operator_1(op_1))
+						data_2 = data;
 					else
-						data_1 = data;
+					{
+						data_1 = merge_data_exp<T, O>(data_1, data, op_1);
+						op_1.clear();
+					}
 				}
-				else if (is_q || is_c)
-					throw("only arithmetic operator can appears after ? or : operator!");
+				else if (parsed_exp->is_data())
+					data_1 = std::dynamic_pointer_cast<data_exp<T>>(parsed_exp);
 				else
 					merge_judge_exp(judge_1, judge_2, lop_1, lop_2, std::dynamic_pointer_cast<judge_exp<T>>(parsed_exp));
 			}
 
-			if (revert > 0)
-				throw("unexpected ! operator!");
-			else if (negative)
-				throw("unexpected - operator!");
-			else if (positive)
-				throw("unexpected + operator!");
+			if (!unary_operators.empty())
+			{
+				auto error = "unexpected " + std::string(1, unary_operators[0]) + " operator!";
+				unary_operators.clear();
+
+				throw error;
+			}
 
 			++index;
 		}
 
-		if (!c.empty())
-			finish_data_and_merge_judge_exp(data_1, data_2, op_1, op_2, dc, c, judge_1, judge_2, lop_1, lop_2);
-		else if (data_1)
-		{
-			finish_data_exp(data_1, data_2, op_1, op_2);
-			if (is_c)
-			{
-				fd_2 = data_1;
-				data_1.reset();
-			}
-		}
+		finish_data_and_merge_judge_exp(dc, c, data_1, data_2, op_1, op_2, judge_1, judge_2, lop_1, lop_2);
+		finish_up(fd_1, fd_2, false, data_1, data_2, op_1, op_2, judge_1, judge_2, lop_1, lop_2);
+		assert(!dc && !data_2 && !judge_2);
+		assert(c.empty() && op_1.empty() && op_2.empty() && lop_1.empty() && lop_2.empty());
 
-		if (judge_1)
+		if (fj)
 		{
-			if (data_1 || data_2)
+			if (!fd_1 || !fd_2)
 				throw("incomplete question exp!");
 
-			finish_judge_exp(judge_1, judge_2, lop_1, lop_2);
-			if (fd_1)
-			{
-				if (!fd_2)
-					throw("missing operand!");
-				return std::make_shared<question_exp<T>>(judge_1, fd_1, fd_2);
-			}
-			else
-				return judge_1;
+			assert(!data_1 && !judge_1);
+			return std::make_shared<question_exp<T>>(fj, fd_1, fd_2);
 		}
 		else if (data_1)
+		{
+			assert(!judge_1);
 			return data_1;
+		}
+		else if (judge_1)
+		{
+			assert(!data_1);
+			return judge_1;
+		}
 		else
 			throw("incomplete exp!");
 	}
