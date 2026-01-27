@@ -218,8 +218,8 @@ public:
 	{
 		//'-a - b', '-a * b', 'a * -b', '-a / b' and 'a / -b' are considered to be negative,
 		// introduce negative property to binary_data_exp is to eliminate negation operations if possible.
-		//following expressions are impossible, see trim_myself for more details:
-		//any immediate value is considered to be NOT negative since it needs no negation operation at runtime, please note.
+		//following expressions cannot be eventual outcomes (we'll transform them to corresponding right ones), see trim_myself for more details:
+		//any immediate value (represented by C below) is considered to be NOT negative since it needs no negation operation at runtime, please note.
 		// '-a + -b'	will be transformed to '-a - b'
 		// '-a + b '	will be transformed to 'b - a'
 		// '-a - -b'	will be transformed to 'b - a'
@@ -1592,16 +1592,16 @@ private:
 		data_2.reset();
 	}
 
-	static void finish_data_exp(data_exp_type<T>& data_1, data_exp_type<T>& data_2,
-		std::string& op_1, const std::string& op_2, data_exp_type<T>& dc)
+	static void finish_data_exp(data_exp_type<T>& data_1, data_exp_type<T>& data_2, std::string& op_1, const std::string& op_2,
+		data_exp_type<T>& dc)
 	{
 		finish_data_exp(data_1, data_2, op_1, op_2);
 		dc = data_1;
 		data_1.reset();
 	}
 
-	static void merge_judge_exp(judge_exp_type<T>& judge_1, judge_exp_type<T>& judge_2,
-		std::string& lop_1, std::string& lop_2, judge_exp_ctype<T>& judge)
+	static void merge_judge_exp(judge_exp_type<T>& judge_1, judge_exp_type<T>& judge_2, std::string& lop_1, std::string& lop_2,
+		judge_exp_ctype<T>& judge)
 	{
 		if (judge_2)
 		{
@@ -1630,15 +1630,24 @@ private:
 
 	static void finish_data_and_merge_judge_exp(data_exp_type<T>& dc, std::string& c,
 		data_exp_type<T>& data_1, data_exp_type<T>& data_2, std::string& op_1, std::string& op_2,
-		judge_exp_type<T>& judge_1, judge_exp_type<T>& judge_2, std::string& lop_1, std::string& lop_2)
+		judge_exp_type<T>& judge_1, judge_exp_type<T>& judge_2, std::string& lop_1, std::string& lop_2, bool sweep_data = true)
 	{
-		if (!c.empty())
+		if (!c.empty() && dc)
 		{
+			if (!data_1)
+				throw("missing comparand!");
+
 			data_exp_type<T> dc_2;
 			finish_data_exp(data_1, data_2, op_1, op_2, dc_2);
 			merge_judge_exp(judge_1, judge_2, lop_1, lop_2, make_binary_judge_exp(dc, dc_2, c));
 			dc.reset();
 			c.clear();
+		}
+		else if (sweep_data && (data_1 || data_2))
+		{
+			finish_data_exp(data_1, data_2, op_1, op_2);
+			merge_judge_exp(judge_1, judge_2, lop_1, lop_2, std::dynamic_pointer_cast<judge_exp<T>>(transform_exp(data_1)));
+			data_1.reset();
 		}
 	}
 
@@ -1648,6 +1657,11 @@ private:
 	{
 		if (data_1)
 			finish_data_exp(data_1, data_2, op_1, op_2);
+
+		if (first_phase)
+			assert(!fd_1);
+		else if (fd_1)
+			assert(!fd_2);
 
 		if (judge_1)
 		{
@@ -1671,15 +1685,9 @@ private:
 		else if (data_1)
 		{
 			if (first_phase)
-			{
-				assert(!fd_1);
 				fd_1.swap(data_1);
-			}
 			else if (fd_1)
-			{
-				assert(!fd_2);
 				fd_2.swap(data_1);
-			}
 		}
 	}
 
@@ -1835,13 +1843,6 @@ private:
 			else if (is_logical_operator(item))
 			{
 				finish_data_and_merge_judge_exp(dc, c, data_1, data_2, op_1, op_2, judge_1, judge_2, lop_1, lop_2);
-				if (data_1 || data_2)
-				{
-					finish_data_exp(data_1, data_2, op_1, op_2);
-					merge_judge_exp(judge_1, judge_2, lop_1, lop_2, std::make_shared<not_equal_0_judge_exp<T>>(data_1));
-					data_1.reset();
-				}
-
 				if (judge_2)
 				{
 					if (!lop_2.empty())
@@ -1872,13 +1873,6 @@ private:
 					throw("redundant ? operator!");
 
 				finish_data_and_merge_judge_exp(dc, c, data_1, data_2, op_1, op_2, judge_1, judge_2, lop_1, lop_2);
-				if (data_1 || data_2)
-				{
-					finish_data_exp(data_1, data_2, op_1, op_2);
-					merge_judge_exp(judge_1, judge_2, lop_1, lop_2, std::make_shared<not_equal_0_judge_exp<T>>(data_1));
-					data_1.reset();
-				}
-
 				finish_judge_exp(judge_1, judge_2, lop_1, lop_2);
 				fj.swap(judge_1);
 			}
@@ -1889,7 +1883,7 @@ private:
 				else if (fd_1)
 					throw("redundant : operator!");
 
-				finish_data_and_merge_judge_exp(dc, c, data_1, data_2, op_1, op_2, judge_1, judge_2, lop_1, lop_2);
+				finish_data_and_merge_judge_exp(dc, c, data_1, data_2, op_1, op_2, judge_1, judge_2, lop_1, lop_2, false);
 				finish_up(fd_1, fd_2, true, data_1, data_2, op_1, op_2, judge_1, judge_2, lop_1, lop_2);
 			}
 			else
@@ -1957,21 +1951,16 @@ private:
 			}
 
 			if (!unary_operators.empty())
-			{
-				auto error = "unexpected " + std::string(1, unary_operators[0]) + " operator!";
-				unary_operators.clear();
-
-				throw error;
-			}
+				throw("unexpected " + std::string(1, unary_operators[0]) + " operator!");
 
 			++index;
 		}
 
-		finish_data_and_merge_judge_exp(dc, c, data_1, data_2, op_1, op_2, judge_1, judge_2, lop_1, lop_2);
+		finish_data_and_merge_judge_exp(dc, c, data_1, data_2, op_1, op_2, judge_1, judge_2, lop_1, lop_2, false);
 		finish_up(fd_1, fd_2, false, data_1, data_2, op_1, op_2, judge_1, judge_2, lop_1, lop_2);
-		assert(!dc && !data_2 && !judge_2);
-		assert(c.empty() && op_1.empty() && op_2.empty() && lop_1.empty() && lop_2.empty());
 
+		assert(c.empty() && op_1.empty() && op_2.empty() && lop_1.empty() && lop_2.empty());
+		assert(!dc && !data_2 && !judge_2);
 		if (fj)
 		{
 			if (!fd_1 || !fd_2)
@@ -1986,10 +1975,7 @@ private:
 			return data_1;
 		}
 		else if (judge_1)
-		{
-			assert(!data_1);
 			return judge_1;
-		}
 		else
 			throw("incomplete exp!");
 	}
