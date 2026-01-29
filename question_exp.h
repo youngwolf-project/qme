@@ -807,7 +807,7 @@ template <typename T, typename O> inline data_exp_type<T> merge_data_exp(data_ex
 }
 template <typename T, typename O>
 inline data_exp_type<T> merge_data_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r, const std::string& op)
-	{return merge_data_exp<T, O>(dexp_l, dexp_r, op[0]);}
+	{return merge_data_exp<T, O>(dexp_l, dexp_r, *op.data());}
 
 //since recursion is used during the whole compilation and execution, if your expression is too complicated to
 // be compiled and executed (stack overflow), use
@@ -1577,134 +1577,165 @@ private:
 		return items;
 	}
 
-	static void finish_data_exp(data_exp_type<T>& data_1, data_exp_type<T>& data_2, std::string& op_1, const std::string& op_2)
+	static void finish_data_exp(data_exp_type<T>& data_1, data_exp_type<T>&& data_2, std::string& op_1, const std::string& op_2 = std::string())
 	{
-		if (!op_2.empty())
-			throw("missing operand!");
-		else if (!data_1)
+		if (!op_2.empty() || !data_1)
 			throw("missing operand!");
 		else if (data_2)
-			data_1 = merge_data_exp<T, O>(data_1, data_2, op_1);
+		{
+			if (op_1.empty())
+				throw("missing operator!");
+
+			data_1 = qme::merge_data_exp<T, O>(data_1, data_2, op_1);
+			op_1.clear();
+			data_2.reset();
+		}
 		else if (!op_1.empty())
 			throw("missing operand!");
-
-		op_1.clear();
-		data_2.reset();
 	}
 
-	static void finish_data_exp(data_exp_type<T>& data_1, data_exp_type<T>& data_2, std::string& op_1, const std::string& op_2,
+	static void finish_data_exp(data_exp_type<T>& data_1, data_exp_type<T>&& data_2, std::string& op_1, const std::string& op_2,
 		data_exp_type<T>& dc)
 	{
-		finish_data_exp(data_1, data_2, op_1, op_2);
+		finish_data_exp(data_1, std::forward<data_exp_type<T>>(data_2), op_1, op_2);
 		dc = data_1;
 		data_1.reset();
 	}
 
-	static void merge_judge_exp(judge_exp_type<T>& judge_1, judge_exp_type<T>& judge_2, std::string& lop_1, std::string& lop_2,
-		judge_exp_ctype<T>& judge)
+	static void merge_data_exp(data_exp_type<T>& data_1, data_exp_type<T>& data_2, std::string& op_1, std::string& op_2,
+		data_exp_type<T>&& data)
 	{
-		if (judge_2)
+		assert(data);
+		if (data_2)
+			finish_data_exp(data_2, std::forward<data_exp_type<T>>(data), op_2);
+		else if (data_1)
 		{
-			if (lop_2.empty())
-				throw("missing logical operator!");
-
-			judge_2 = qme::merge_judge_exp(judge_2, judge, lop_2);
-			lop_2.clear();
+			assert(op_2.empty());
+			if (is_operator_1(op_1))
+				data_2 = data;
+			else
+				finish_data_exp(data_1, std::forward<data_exp_type<T>>(data), op_1);
 		}
-		else if (judge_1)
+		else
+		{
+			assert(op_1.empty() && op_2.empty());
+			data_1 = data;
+		}
+	}
+
+	static void finish_judge_exp(judge_exp_type<T>& judge_1, judge_exp_type<T>&& judge_2, std::string& lop_1, const std::string& lop_2 = std::string())
+	{
+		if (!lop_2.empty() || !judge_1)
+			throw("missing logical operand!");
+		else if (judge_2)
 		{
 			if (lop_1.empty())
 				throw("missing logical operator!");
 
-			if ("||" == lop_1)
-				judge_2 = judge;
-			else
-			{
-				judge_1 = qme::merge_judge_exp(judge_1, judge, lop_1);
-				lop_1.clear();
-			}
-		}
-		else
-			judge_1 = judge;
-	}
-
-	static void finish_data_and_merge_judge_exp(data_exp_type<T>& dc, std::string& c,
-		data_exp_type<T>& data_1, data_exp_type<T>& data_2, std::string& op_1, std::string& op_2,
-		judge_exp_type<T>& judge_1, judge_exp_type<T>& judge_2, std::string& lop_1, std::string& lop_2, bool sweep_data = true)
-	{
-		if (!c.empty() && dc)
-		{
-			if (!data_1)
-				throw("missing comparand!");
-
-			data_exp_type<T> dc_2;
-			finish_data_exp(data_1, data_2, op_1, op_2, dc_2);
-			merge_judge_exp(judge_1, judge_2, lop_1, lop_2, make_binary_judge_exp(dc, dc_2, c));
-			dc.reset();
-			c.clear();
-		}
-		else if (sweep_data && (data_1 || data_2))
-		{
-			finish_data_exp(data_1, data_2, op_1, op_2);
-			merge_judge_exp(judge_1, judge_2, lop_1, lop_2, std::dynamic_pointer_cast<judge_exp<T>>(transform_exp(data_1)));
-			data_1.reset();
-		}
-	}
-
-	static void finish_up(data_exp_type<T>& fd_1, data_exp_type<T>& fd_2, bool first_phase,
-		data_exp_type<T>& data_1, data_exp_type<T>& data_2, std::string& op_1, std::string& op_2,
-		judge_exp_type<T>& judge_1, judge_exp_type<T>& judge_2, std::string& lop_1, std::string& lop_2)
-	{
-		if (data_1)
-			finish_data_exp(data_1, data_2, op_1, op_2);
-
-		if (first_phase)
-			assert(!fd_1);
-		else if (fd_1)
-			assert(!fd_2);
-
-		if (judge_1)
-		{
-			if (data_1)
-			{
-				assert(!judge_2);
-				judge_2 = std::dynamic_pointer_cast<judge_exp<T>>(transform_exp(data_1));
-				data_1.reset();
-			}
-			finish_judge_exp(judge_1, judge_2, lop_1, lop_2);
-
-			if (first_phase)
-				fd_1 = std::dynamic_pointer_cast<data_exp<T>>(transform_exp(judge_1));
-			else if (fd_1)
-				fd_2 = std::dynamic_pointer_cast<data_exp<T>>(transform_exp(judge_1));
-			else
-				return;
-
-			judge_1.reset();
-		}
-		else if (data_1)
-		{
-			if (first_phase)
-				fd_1.swap(data_1);
-			else if (fd_1)
-				fd_2.swap(data_1);
-		}
-	}
-
-	static void finish_judge_exp(judge_exp_type<T>& judge_1, judge_exp_type<T>& judge_2, std::string& lop_1, std::string& lop_2)
-	{
-		if (!lop_2.empty())
-			throw("missing logical operand!");
-		else if (!judge_1)
-			throw("missing logical operand!");
-		else if (judge_2)
-		{
 			judge_1 = qme::merge_judge_exp(judge_1, judge_2, lop_1);
 			lop_1.clear();
 			judge_2.reset();
 		}
 		else if (!lop_1.empty())
 			throw("missing logical operand!");
+	}
+
+	static void merge_judge_exp(judge_exp_type<T>& judge_1, judge_exp_type<T>& judge_2, std::string& lop_1, std::string& lop_2,
+		judge_exp_type<T>&& judge)
+	{
+		assert(judge);
+		if (judge_2)
+			finish_judge_exp(judge_2, std::forward<judge_exp_type<T>>(judge), lop_2);
+		else if (judge_1)
+		{
+			assert(lop_2.empty());
+			if ("||" == lop_1)
+				judge_2 = judge;
+			else
+				finish_judge_exp(judge_1, std::forward<judge_exp_type<T>>(judge), lop_1);
+		}
+		else
+		{
+			assert(lop_1.empty() && lop_2.empty());
+			judge_1 = judge;
+		}
+	}
+
+	static void finish_data_and_merge_judge_exp(data_exp_type<T>& dc, std::string& c,
+		data_exp_type<T>& data_1, data_exp_type<T>& data_2, std::string& op_1, std::string& op_2,
+		judge_exp_type<T>& judge_1, judge_exp_type<T>& judge_2, std::string& lop_1, std::string& lop_2)
+	{
+		if (!c.empty() || dc)
+		{
+			assert(!c.empty() && dc);
+			if (data_1)
+			{
+				data_exp_type<T> dc_2;
+				finish_data_exp(data_1, std::move(data_2), op_1, op_2, dc_2);
+				merge_judge_exp(judge_1, judge_2, lop_1, lop_2, make_binary_judge_exp(dc, dc_2, c));
+			}
+			else if (judge_1)
+			{
+				assert(!judge_2 && lop_1.empty() && lop_2.empty());
+				judge_1 = make_binary_judge_exp(dc, std::dynamic_pointer_cast<data_exp<T>>(transform_exp(judge_1)), c);
+			}
+			dc.reset();
+			c.clear();
+		}
+		else if (data_1)
+		{
+			finish_data_exp(data_1, std::move(data_2), op_1, op_2);
+			merge_judge_exp(judge_1, judge_2, lop_1, lop_2, std::dynamic_pointer_cast<judge_exp<T>>(transform_exp(data_1)));
+			data_1.reset();
+		}
+	}
+
+	static void finish_data_and_judge_exp(data_exp_type<T>& dc, std::string& c, bool to_data,
+		data_exp_type<T>& data_1, data_exp_type<T>& data_2, std::string& op_1, std::string& op_2,
+		judge_exp_type<T>& judge_1, judge_exp_type<T>& judge_2, std::string& lop_1, std::string& lop_2)
+	{
+		if (data_1)
+			finish_data_exp(data_1, std::move(data_2), op_1, op_2);
+
+		if (!c.empty() || dc)
+		{
+			assert(!c.empty() && dc);
+			if (data_1)
+			{
+				merge_judge_exp(judge_1, judge_2, lop_1, lop_2, make_binary_judge_exp(dc, data_1, c));
+				data_1.reset();
+			}
+			else if (judge_1)
+			{
+				assert(!judge_2 && lop_1.empty() && lop_2.empty());
+				judge_1 = make_binary_judge_exp(dc, std::dynamic_pointer_cast<data_exp<T>>(transform_exp(judge_1)), c);
+			}
+			dc.reset();
+			c.clear();
+		}
+		else if (data_1)
+		{
+			if (judge_1)
+			{
+				merge_judge_exp(judge_1, judge_2, lop_1, lop_2, std::dynamic_pointer_cast<judge_exp<T>>(transform_exp(data_1)));
+				data_1.reset();
+			}
+		}
+		else if (!judge_1)
+			throw("missing operand!");
+
+		if (data_1)
+			assert(!judge_1);
+		else
+		{
+			finish_judge_exp(judge_1, std::move(judge_2), lop_1, lop_2);
+			if (to_data)
+			{
+				assert(judge_1);
+				data_1 = std::dynamic_pointer_cast<data_exp<T>>(transform_exp(judge_1));
+				judge_1.reset();
+			}
+		}
 	}
 
 	static exp_type compile(const std::vector<std::string>& items, const std::map<std::string, sub_exp>& sub_exps)
@@ -1738,9 +1769,9 @@ private:
 			if (0 == errno && '\0' != *endptr)
 				value = (T) strtod(vov.data(), &endptr); //(T) atof(vov.data())
 		}
-
 		if (0 != errno || '\0' != *endptr)
 			throw("invalid immediate data " + vov);
+
 		return std::make_shared<immediate_data_exp<T>>(value);
 	}
 
@@ -1803,9 +1834,8 @@ private:
 						check = true;
 					else if (is_operator_1(item))
 					{
-						data_1 = merge_data_exp<T, O>(data_1, data_2, op_1);
+						finish_data_exp(data_1, std::move(data_2), op_1);
 						op_1 = item;
-						data_2.reset();
 					}
 					else
 						op_2 = item;
@@ -1836,9 +1866,31 @@ private:
 			{
 				if (!c.empty() || dc)
 					throw("redundant comparer!");
+				else if (!data_1)
+				{
+					assert(!data_2 && op_1.empty() && op_2.empty());
+					if (judge_2)
+					{
+						assert(judge_1 && !lop_1.empty());
+						if (!lop_2.empty())
+							throw("missing operand!");
+
+						data_1 = std::dynamic_pointer_cast<data_exp<T>>(transform_exp(judge_2));
+						judge_2.reset();
+					}
+					else if (judge_1)
+					{
+						assert(lop_2.empty());
+						if (!lop_1.empty())
+							throw("missing operand!");
+
+						data_1 = std::dynamic_pointer_cast<data_exp<T>>(transform_exp(judge_1));
+						judge_1.reset();
+					}
+				}
 
 				c = item;
-				finish_data_exp(data_1, data_2, op_1, op_2, dc);
+				finish_data_exp(data_1, std::move(data_2), op_1, op_2, dc);
 			}
 			else if (is_logical_operator(item))
 			{
@@ -1847,12 +1899,10 @@ private:
 				{
 					if (!lop_2.empty())
 						throw("redundant logical operator!");
-
-					if ("||" == item)
+					else if ("||" == item)
 					{
-						judge_1 = qme::merge_judge_exp(judge_1, judge_2, lop_1);
+						finish_judge_exp(judge_1, std::move(judge_2), lop_1, lop_2);
 						lop_1 = item;
-						judge_2.reset();
 					}
 					else
 						lop_2 = item;
@@ -1861,8 +1911,8 @@ private:
 				{
 					if (!lop_1.empty())
 						throw("redundant logical operator!");
-
-					lop_1 = item;
+					else
+						lop_1 = item;
 				}
 				else
 					throw("missing logical operand!");
@@ -1873,7 +1923,7 @@ private:
 					throw("redundant ? operator!");
 
 				finish_data_and_merge_judge_exp(dc, c, data_1, data_2, op_1, op_2, judge_1, judge_2, lop_1, lop_2);
-				finish_judge_exp(judge_1, judge_2, lop_1, lop_2);
+				finish_judge_exp(judge_1, std::move(judge_2), lop_1, lop_2);
 				fj.swap(judge_1);
 			}
 			else if (":" == item)
@@ -1883,8 +1933,8 @@ private:
 				else if (fd_1)
 					throw("redundant : operator!");
 
-				finish_data_and_merge_judge_exp(dc, c, data_1, data_2, op_1, op_2, judge_1, judge_2, lop_1, lop_2, false);
-				finish_up(fd_1, fd_2, true, data_1, data_2, op_1, op_2, judge_1, judge_2, lop_1, lop_2);
+				finish_data_and_judge_exp(dc, c, true, data_1, data_2, op_1, op_2, judge_1, judge_2, lop_1, lop_2);
+				fd_1.swap(data_1);
 			}
 			else
 			{
@@ -1913,9 +1963,9 @@ private:
 					{
 						if (*iter == last_operator)
 							throw ("redundant " + std::string(1, last_operator) + " operator!");
-
-						if (parsed_exp->is_judge())
+						else if (parsed_exp->is_judge())
 							parsed_exp = transform_exp(parsed_exp);
+
 						if ('-' == *iter)
 							parsed_exp = std::dynamic_pointer_cast<data_exp<T>>(parsed_exp)->to_negative();
 					}
@@ -1923,31 +1973,11 @@ private:
 				}
 				unary_operators.clear();
 
-				if (data_1)
-				{
-					auto data = std::dynamic_pointer_cast<data_exp<T>>(parsed_exp->is_data() ? parsed_exp : transform_exp(parsed_exp));
-					if (data_2)
-					{
-						if (op_2.empty())
-							throw("missing operator!");
-
-						data_2 = merge_data_exp<T, O>(data_2, data, op_2);
-						op_2.clear();
-					}
-					else if (op_1.empty())
-						throw("missing operator!");
-					else if (is_operator_1(op_1))
-						data_2 = data;
-					else
-					{
-						data_1 = merge_data_exp<T, O>(data_1, data, op_1);
-						op_1.clear();
-					}
-				}
-				else if (parsed_exp->is_data())
-					data_1 = std::dynamic_pointer_cast<data_exp<T>>(parsed_exp);
-				else
+				if (!data_1 && parsed_exp->is_judge())
 					merge_judge_exp(judge_1, judge_2, lop_1, lop_2, std::dynamic_pointer_cast<judge_exp<T>>(parsed_exp));
+				else
+					merge_data_exp(data_1, data_2, op_1, op_2,
+						std::dynamic_pointer_cast<data_exp<T>>(parsed_exp->is_data() ? parsed_exp : transform_exp(parsed_exp)));
 			}
 
 			if (!unary_operators.empty())
@@ -1956,8 +1986,13 @@ private:
 			++index;
 		}
 
-		finish_data_and_merge_judge_exp(dc, c, data_1, data_2, op_1, op_2, judge_1, judge_2, lop_1, lop_2, false);
-		finish_up(fd_1, fd_2, false, data_1, data_2, op_1, op_2, judge_1, judge_2, lop_1, lop_2);
+		auto to_data = fj && fd_1;
+		finish_data_and_judge_exp(dc, c, to_data, data_1, data_2, op_1, op_2, judge_1, judge_2, lop_1, lop_2);
+		if (to_data)
+		{
+			assert(!fd_2);
+			fd_2.swap(data_1);
+		}
 
 		assert(c.empty() && op_1.empty() && op_2.empty() && lop_1.empty() && lop_2.empty());
 		assert(!dc && !data_2 && !judge_2);
