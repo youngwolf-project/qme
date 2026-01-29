@@ -1594,14 +1594,6 @@ private:
 			throw("missing operand!");
 	}
 
-	static void finish_data_exp(data_exp_type<T>& data_1, data_exp_type<T>&& data_2, std::string& op_1, const std::string& op_2,
-		data_exp_type<T>& dc)
-	{
-		finish_data_exp(data_1, std::forward<data_exp_type<T>>(data_2), op_1, op_2);
-		dc = data_1;
-		data_1.reset();
-	}
-
 	static void merge_data_exp(data_exp_type<T>& data_1, data_exp_type<T>& data_2, std::string& op_1, std::string& op_2,
 		data_exp_type<T>&& data)
 	{
@@ -1670,9 +1662,8 @@ private:
 			assert(!c.empty() && dc);
 			if (data_1)
 			{
-				data_exp_type<T> dc_2;
-				finish_data_exp(data_1, std::move(data_2), op_1, op_2, dc_2);
-				merge_judge_exp(judge_1, judge_2, lop_1, lop_2, make_binary_judge_exp(dc, dc_2, c));
+				finish_data_exp(data_1, std::move(data_2), op_1, op_2);
+				merge_judge_exp(judge_1, judge_2, lop_1, lop_2, make_binary_judge_exp(dc, data_exp_type<T>(std::move(data_1)), c));
 			}
 			else if (judge_1)
 			{
@@ -1890,7 +1881,8 @@ private:
 				}
 
 				c = item;
-				finish_data_exp(data_1, std::move(data_2), op_1, op_2, dc);
+				finish_data_exp(data_1, std::move(data_2), op_1, op_2);
+				dc = std::move(data_1);
 			}
 			else if (is_logical_operator(item))
 			{
