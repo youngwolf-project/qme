@@ -175,16 +175,19 @@ int main(int argc, const char* argv[])
 		{"a > 0 ? a > 0 || b > 0 || + c : b + c", 12, 1},
 		{"(a > 0) > (c > 0) ? a > 0 : c > 0", 1, 1},
 
-		//following expressions (15 entries) are supposed to be invalid:
+		//following expressions (18 entries) are supposed to be invalid:
 		{"?a"},
 		{":a"},
 		{"a : b"},
 		{"? c : 0"},
-		{"a : b ? c : 0"},
-		{": b ? c : 0"},
 		{"a > b > c"},
+		{": b ? c : 0"},
 		{"a > ? 0 : 1"},
+		{"a ? a > : c"},
+		{"a ? a : c <"},
+		{"a ? a : == c"},
 		{"a > || b > 0"},
+		{"a : b ? c : 0"},
 		{"a! > 0 ? a : b"},
 		{"(a >) 0 ? a : b"},
 		{"(a > 0) ? a : b +"},
