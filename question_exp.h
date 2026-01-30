@@ -1286,14 +1286,14 @@ public:
 	static exp_type transform_exp(const exp_type& exp)
 	{
 		if (exp->is_data())
-		{
-			auto data = std::dynamic_pointer_cast<data_exp<T>>(exp);
-			return !data ? judge_exp_type<T>() : std::make_shared<not_equal_0_judge_exp<T>>(data);
-		}
-
-		auto judge = std::dynamic_pointer_cast<judge_exp<T>>(exp);
-		return !judge ? data_exp_type<T>() : std::make_shared<question_exp<T>>(judge);
+			return transform_exp(std::dynamic_pointer_cast<data_exp<T>>(exp));
+		return transform_exp(std::dynamic_pointer_cast<judge_exp<T>>(exp));
 	}
+	static data_exp_type<T> transform_exp(judge_exp_ctype<T>& judge) {assert(!judge); return std::make_shared<question_exp<T>>(judge);}
+	static judge_exp_type<T> transform_exp(data_exp_ctype<T>& data) {assert(!data); return std::make_shared<not_equal_0_judge_exp<T>>(data);}
+
+	static data_exp_type<T> to_data_exp(const exp_type& exp) {return std::dynamic_pointer_cast<data_exp<T>>(exp->is_data() ? exp : transform_exp(exp));}
+	static judge_exp_type<T> to_judge_exp(const exp_type& exp) {return std::dynamic_pointer_cast<judge_exp<T>>(exp->is_judge() ? exp : transform_exp(exp));}
 
 	template <template<typename> class Exp = data_exp> static std::shared_ptr<Exp<T>> compile(const char* statement)
 		{return compile<Exp>(std::string(statement));}
@@ -1670,13 +1670,13 @@ private:
 			else if (judge_1)
 			{
 				assert(!judge_2 && lop_1.empty() && lop_2.empty());
-				judge_1 = make_binary_judge_exp(dc, std::dynamic_pointer_cast<data_exp<T>>(transform_exp(judge_1)), c);
+				judge_1 = make_binary_judge_exp(dc, transform_exp(judge_1), c);
 			}
 			dc.reset();
 			c.clear();
 		}
 		else if (data_1)
-			merge_judge_exp(judge_1, judge_2, lop_1, lop_2, std::dynamic_pointer_cast<judge_exp<T>>(transform_exp(data_1)));
+			merge_judge_exp(judge_1, judge_2, lop_1, lop_2, transform_exp(data_1));
 
 		data_1.reset();
 	}
@@ -1696,7 +1696,7 @@ private:
 			else if (judge_1)
 			{
 				assert(!judge_2 && lop_1.empty() && lop_2.empty());
-				judge_1 = make_binary_judge_exp(dc, std::dynamic_pointer_cast<data_exp<T>>(transform_exp(judge_1)), c);
+				judge_1 = make_binary_judge_exp(dc, transform_exp(judge_1), c);
 			}
 			dc.reset();
 			c.clear();
@@ -1706,14 +1706,14 @@ private:
 			if (!judge_1)
 				return;
 
-			merge_judge_exp(judge_1, judge_2, lop_1, lop_2, std::dynamic_pointer_cast<judge_exp<T>>(transform_exp(data_1)));
+			merge_judge_exp(judge_1, judge_2, lop_1, lop_2, transform_exp(data_1));
 		}
 
 		data_1.reset();
 		finish_judge_exp(judge_1, std::move(judge_2), lop_1, lop_2);
 		if (to_data)
 		{
-			data_1 = std::dynamic_pointer_cast<data_exp<T>>(transform_exp(judge_1));
+			data_1 = transform_exp(judge_1);
 			judge_1.reset();
 		}
 	}
@@ -1791,13 +1791,13 @@ private:
 				{
 					if (lop_2.empty())
 					{
-						data = std::dynamic_pointer_cast<data_exp<T>>(transform_exp(judge_2));
+						data = transform_exp(judge_2);
 						judge_2.reset();
 					}
 				}
 				else if (judge_1 && lop_1.empty())
 				{
-					data = std::dynamic_pointer_cast<data_exp<T>>(transform_exp(judge_1));
+					data = transform_exp(judge_1);
 					judge_1.reset();
 				}
 
@@ -1855,7 +1855,7 @@ private:
 						if (!lop_2.empty())
 							throw("missing operand!");
 
-						data_1 = std::dynamic_pointer_cast<data_exp<T>>(transform_exp(judge_2));
+						data_1 = transform_exp(judge_2);
 						judge_2.reset();
 					}
 					else if (judge_1)
@@ -1864,14 +1864,14 @@ private:
 						if (!lop_1.empty())
 							throw("missing operand!");
 
-						data_1 = std::dynamic_pointer_cast<data_exp<T>>(transform_exp(judge_1));
+						data_1 = transform_exp(judge_1);
 						judge_1.reset();
 					}
 				}
 
-				c = item;
 				finish_data_exp(data_1, std::move(data_2), op_1, op_2);
 				dc = std::move(data_1);
+				c = item;
 			}
 			else if (is_logical_operator(item))
 			{
@@ -1932,37 +1932,25 @@ private:
 					parsed_exp = parse_data(item);
 
 				auto last_operator = '\0';
-				for (auto iter = unary_operators.crbegin(); iter != unary_operators.crend(); ++iter)
+				for (auto iter = unary_operators.crbegin(); iter != unary_operators.crend(); last_operator = *iter, ++iter)
 				{
 					if ('!' == *iter)
-					{
-						if (parsed_exp->is_data())
-							parsed_exp = transform_exp(parsed_exp);
-						parsed_exp = std::dynamic_pointer_cast<judge_exp<T>>(parsed_exp)->revert();
-					}
+						parsed_exp = to_judge_exp(parsed_exp)->revert();
+					else if (*iter == last_operator)
+						throw("redundant " + std::string(1, last_operator) + " operator!");
 					else
-					{
-						if (*iter == last_operator)
-							throw ("redundant " + std::string(1, last_operator) + " operator!");
-						else if (parsed_exp->is_judge())
-							parsed_exp = transform_exp(parsed_exp);
-
-						if ('-' == *iter)
-							parsed_exp = std::dynamic_pointer_cast<data_exp<T>>(parsed_exp)->to_negative();
-					}
-					last_operator = *iter;
+						parsed_exp = '-' == *iter ? to_data_exp(parsed_exp)->to_negative() : to_data_exp(parsed_exp);
 				}
 				unary_operators.clear();
 
 				if (!data_1 && parsed_exp->is_judge())
 					merge_judge_exp(judge_1, judge_2, lop_1, lop_2, std::dynamic_pointer_cast<judge_exp<T>>(parsed_exp));
 				else
-					merge_data_exp(data_1, data_2, op_1, op_2,
-						std::dynamic_pointer_cast<data_exp<T>>(parsed_exp->is_data() ? parsed_exp : transform_exp(parsed_exp)));
+					merge_data_exp(data_1, data_2, op_1, op_2, to_data_exp(parsed_exp));
 			}
 
 			if (!unary_operators.empty())
-				throw("unexpected " + std::string(1, unary_operators[0]) + " operator!");
+				throw("unexpected " + std::string(1, unary_operators.back()) + " operator!");
 
 			++index;
 		}

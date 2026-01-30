@@ -91,7 +91,7 @@ int main(int argc, const char* argv[])
 		{"a ? 1 / a : 0", -.01f, .01f}, //immediate values: -1, 0
 
 		//sub question expressions' immediate values will not be merged into superiors'
-		{"a ? 20 + (a > 0 ? a : 10) : 0", 30.f, 120.f}, //immediate values: 20, 0 (from the judgement of the sub qme), 10, 0
+		{"a ? 20 + (a > 0 ? a : 0xA) : 0", 30.f, 120.f}, //immediate values: 20, 0 (from the judgement of the sub qme), 10, 0
 		{"a ? (a > 0 ? a : 10) + 20 : 0", 30.f, 120.f}, //immediate values: 0 (from the judgement of the sub qme), 10, 20, 0
 		{"a ? 20 - (a > 0 ? a : 10) : 0", 10.f, -80.f}, //immediate values: 20, 0 (from the judgement of the sub qme), 10, 0
 		{"a ? (a > 0 ? a : 10) - 20 : 0", -10.f, 80.f}, //immediate values: 0 (from the judgement of the sub qme), 10, 20, 0
