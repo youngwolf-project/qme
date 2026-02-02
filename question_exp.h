@@ -498,13 +498,28 @@ public:
 	}
 };
 
-template <typename T> class negative_variable_data_exp;
+template <typename T, template<typename> class D> class negative_data_exp : public D<T>
+{
+public:
+	template <typename Arg> negative_data_exp(const Arg& arg) : D<T>(arg) {}
+	template <typename Arg1, typename Arg2> negative_data_exp(const Arg1& arg1, const Arg2& arg2) : D<T>(arg1, arg2) {}
+	template <typename Arg1, typename Arg2> negative_data_exp(const Arg1& arg1, const Arg2& arg2, const Arg2& arg3) : D<T>(arg1, arg2, arg3) {}
+
+	virtual int get_depth() const {return 1 + D<T>::get_depth();}
+	virtual bool is_easy_to_negative() const {return true;}
+	virtual bool is_negative() const {return true;}
+
+	virtual data_exp_type<T> to_negative() const {return D<T>::clone();}
+
+	virtual T operator()(const std::function<T(const std::string&)>& cb) const {return -D<T>::operator()(cb);}
+};
+
 template <typename T> class variable_data_exp : public data_exp<T>
 {
 public:
 	variable_data_exp(const std::string& _variable_name) : variable_name(_variable_name) {}
 
-	virtual data_exp_type<T> to_negative() const {return std::make_shared<negative_variable_data_exp<T>>(variable_name);}
+	virtual data_exp_type<T> to_negative() const {return std::make_shared<negative_data_exp<T, variable_data_exp>>(variable_name);}
 
 	virtual T operator()(const std::function<T(const std::string&)>& cb) const
 	{
@@ -523,20 +538,6 @@ private:
 	std::string variable_name;
 };
 
-template <typename T> class negative_variable_data_exp : public variable_data_exp<T>
-{
-public:
-	negative_variable_data_exp(const std::string& variable_name) : variable_data_exp<T>(variable_name) {}
-
-	virtual bool is_easy_to_negative() const {return true;}
-	virtual bool is_negative() const {return true;}
-
-	virtual data_exp_type<T> to_negative() const {return variable_data_exp<T>::clone();}
-
-	virtual T operator()(const std::function<T(const std::string&)>& cb) const {return -variable_data_exp<T>::operator()(cb);}
-};
-
-template <typename T> class negative_exponent_data_exp;
 template <typename T> class exponent_data_exp : public data_exp<T>
 {
 public:
@@ -544,7 +545,7 @@ public:
 
 	virtual void show_immediate_value() const {std::cout << ' ' << exponent;}
 
-	virtual data_exp_type<T> to_negative() const {return std::make_shared<negative_exponent_data_exp<T>>(variable_name, exponent);}
+	virtual data_exp_type<T> to_negative() const {return std::make_shared<negative_data_exp<T, exponent_data_exp>>(variable_name, exponent);}
 
 	virtual T operator()(const std::function<T(const std::string&)>& cb) const
 	{
@@ -562,19 +563,6 @@ protected:
 private:
 	std::string variable_name;
 	int exponent;
-};
-
-template <typename T> class negative_exponent_data_exp : public exponent_data_exp<T>
-{
-public:
-	negative_exponent_data_exp(const std::string& variable_name, int exponent) : exponent_data_exp<T>(variable_name, exponent) {}
-
-	virtual bool is_easy_to_negative() const {return true;}
-	virtual bool is_negative() const {return true;}
-
-	virtual data_exp_type<T> to_negative() const {return exponent_data_exp<T>::clone();}
-
-	virtual T operator()(const std::function<T(const std::string&)>& cb) const {return -exponent_data_exp<T>::operator()(cb);}
 };
 
 template <typename T, typename O> class composite_variable_data_exp : public data_exp<T>
@@ -688,7 +676,7 @@ public:
 		else if (1 == multiplier && exponent < 0)
 			return std::make_shared<exponent_data_exp<T>>(variable_name, exponent);
 		else if (-1 == multiplier && exponent < 0)
-			return std::make_shared<negative_exponent_data_exp<T>>(variable_name, exponent);
+			return std::make_shared<negative_data_exp<T, exponent_data_exp>>(variable_name, exponent);
 		else if (-1 == exponent)
 			return std::make_shared<div_data_exp<T, O>>(data, std::make_shared<variable_data_exp<T>>(variable_name));
 		else if (exponent < -1)
@@ -1202,21 +1190,24 @@ inline judge_exp_type<T> merge_judge_exp(judge_exp_ctype<T>& jexp_l, judge_exp_c
 /////////////////////////////////////////////////////////////////////////////////////////
 
 /////////////////////////////////////////////////////////////////////////////////////////
-template <typename T> class negative_question_exp;
+template <typename T, template<typename> class Q> class negative_question_exp : public negative_data_exp<T, Q>
+{
+public:
+	negative_question_exp(judge_exp_ctype<T>& jexp) : negative_data_exp<T, Q>(jexp) {}
+	negative_question_exp(judge_exp_ctype<T>& jexp, data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) :
+		negative_data_exp<T, Q>(jexp, dexp_l, dexp_r) {}
+
+	virtual data_exp_type<T> final_optimize() const {return Q<T>::final_optimize()->to_negative();}
+
+private:
+	virtual T safe_execute(const std::function<T(const std::string&)>& cb) const {return -Q<T>::safe_execute(cb);}
+};
+
 template <typename T> class question_exp : public data_exp<T>
 {
-	friend class negative_question_exp<T>;
+	friend class negative_question_exp<T, question_exp>;
 
 public:
-	question_exp(judge_exp_ctype<T>& _jexp) : jexp(_jexp)
-	{
-		static const auto _0 = std::make_shared<immediate_data_exp<T>>(0);
-		static const auto _1 = std::make_shared<immediate_data_exp<T>>(1);
-
-		dexp_l = _1;
-		dexp_r = _0;
-	}
-
 	question_exp(judge_exp_ctype<T>& _jexp, data_exp_ctype<T>& _dexp_l, data_exp_ctype<T>& _dexp_r) :
 		jexp(_jexp), dexp_l(_dexp_l), dexp_r(_dexp_r) {}
 
@@ -1224,6 +1215,7 @@ public:
 	virtual void show_immediate_value() const
 		{jexp->show_immediate_value(); dexp_l->show_immediate_value(); dexp_r->show_immediate_value();}
 
+	virtual data_exp_type<T> to_negative() const {return std::make_shared<negative_question_exp<T, question_exp>>(jexp, dexp_l, dexp_r);}
 	virtual data_exp_type<T> final_optimize() const
 	{
 		jexp->final_optimize();
@@ -1232,7 +1224,6 @@ public:
 
 		return std::make_shared<question_exp<T>>(jexp, l ? l : dexp_l, r ? r : dexp_r);
 	}
-	virtual data_exp_type<T> to_negative() const {return std::make_shared<negative_question_exp<T>>(jexp, dexp_l, dexp_r);}
 
 	virtual T operator()(const std::function<T(const std::string&)>& cb) const {return (*jexp)(cb) ? (*dexp_l)(cb) : (*dexp_r)(cb);}
 
@@ -1251,22 +1242,36 @@ private:
 	data_exp_type<T> dexp_l, dexp_r;
 };
 
-template <typename T> class negative_question_exp : public question_exp<T>
+template <typename T> class simple_question_exp : public data_exp<T>
 {
+	friend class negative_question_exp<T, simple_question_exp>;
+
 public:
-	negative_question_exp(judge_exp_ctype<T>& jexp, data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) :
-		question_exp<T>(jexp, dexp_l, dexp_r) {}
+	simple_question_exp(judge_exp_ctype<T>& _jexp) : jexp(_jexp) {}
 
-	virtual bool is_easy_to_negative() const {return true;}
-	virtual bool is_negative() const {return true;}
+	virtual int get_depth() const {return 1 + jexp->get_depth();}
+	virtual void show_immediate_value() const {jexp->show_immediate_value();}
 
-	virtual data_exp_type<T> final_optimize() const {return question_exp<T>::final_optimize()->to_negative();}
-	virtual data_exp_type<T> to_negative() const {return question_exp<T>::clone();}
+	virtual data_exp_type<T> to_negative() const {return std::make_shared<negative_question_exp<T, simple_question_exp>>(jexp);}
+	virtual data_exp_type<T> final_optimize() const
+	{
+		jexp->final_optimize();
+		return std::make_shared<simple_question_exp<T>>(jexp);
+	}
 
-	virtual T operator()(const std::function<T(const std::string&)>& cb) const {return -question_exp<T>::operator()(cb);}
+	virtual T operator()(const std::function<T(const std::string&)>& cb) const {return (T) (*jexp)(cb);}
+
+protected:
+	data_exp_type<T> clone() const {return std::make_shared<simple_question_exp<T>>(jexp);}
 
 private:
-	virtual T safe_execute(const std::function<T(const std::string&)>& cb) const {return -question_exp<T>::safe_execute(cb);}
+	//for simple_question_exp, recursion still happens here if this simple_question_exp is a sub expression
+	virtual T safe_execute(const std::function<T(const std::string&)>& cb) const {return (T) qme::safe_execute(jexp, cb);}
+	//for simple_question_exp, recursion still happens here if this simple_question_exp is a sub expression
+	virtual void safe_delete() const {qme::safe_delete(jexp);}
+
+private:
+	judge_exp_type<T> jexp;
 };
 /////////////////////////////////////////////////////////////////////////////////////////
 
@@ -1289,8 +1294,8 @@ public:
 			return transform_exp(std::dynamic_pointer_cast<data_exp<T>>(exp));
 		return transform_exp(std::dynamic_pointer_cast<judge_exp<T>>(exp));
 	}
-	static data_exp_type<T> transform_exp(judge_exp_ctype<T>& judge) {assert(!judge); return std::make_shared<question_exp<T>>(judge);}
-	static judge_exp_type<T> transform_exp(data_exp_ctype<T>& data) {assert(!data); return std::make_shared<not_equal_0_judge_exp<T>>(data);}
+	static data_exp_type<T> transform_exp(judge_exp_ctype<T>& judge) {assert(judge); return std::make_shared<simple_question_exp<T>>(judge);}
+	static judge_exp_type<T> transform_exp(data_exp_ctype<T>& data) {assert(data); return std::make_shared<not_equal_0_judge_exp<T>>(data);}
 
 	static data_exp_type<T> to_data_exp(const exp_type& exp) {return std::dynamic_pointer_cast<data_exp<T>>(exp->is_data() ? exp : transform_exp(exp));}
 	static judge_exp_type<T> to_judge_exp(const exp_type& exp) {return std::dynamic_pointer_cast<judge_exp<T>>(exp->is_judge() ? exp : transform_exp(exp));}
