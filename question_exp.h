@@ -501,9 +501,7 @@ public:
 template <typename T, template<typename> class D> class negative_data_exp : public D<T>
 {
 public:
-	template <typename Arg> negative_data_exp(const Arg& arg) : D<T>(arg) {}
-	template <typename Arg1, typename Arg2> negative_data_exp(const Arg1& arg1, const Arg2& arg2) : D<T>(arg1, arg2) {}
-	template <typename Arg1, typename Arg2> negative_data_exp(const Arg1& arg1, const Arg2& arg2, const Arg2& arg3) : D<T>(arg1, arg2, arg3) {}
+	using D<T>::D;
 
 	virtual int get_depth() const {return 1 + D<T>::get_depth();}
 	virtual bool is_easy_to_negative() const {return true;}
@@ -948,7 +946,7 @@ template <typename T> inline bool safe_execute(judge_exp_ctype<T>& jexp, const s
 
 template <typename T> class unitary_judge_exp : public judge_exp<T>
 {
-protected:
+public:
 	unitary_judge_exp(data_exp_ctype<T>& _dexp) : dexp(_dexp) {}
 
 public:
@@ -972,7 +970,7 @@ template <typename T> class not_equal_0_judge_exp;
 template <typename T> class equal_0_judge_exp : public unitary_judge_exp<T> //intentional optimization for !a ? b : c, for a > 0 .etc, use binary_judge_exp
 {
 public:
-	equal_0_judge_exp(data_exp_ctype<T>& dexp) : unitary_judge_exp<T>(dexp) {}
+	using unitary_judge_exp<T>::unitary_judge_exp;
 
 	virtual judge_exp_type<T> revert() const {return std::make_shared<not_equal_0_judge_exp<T>>(this->dexp);}
 
@@ -985,7 +983,7 @@ private:
 template <typename T> class not_equal_0_judge_exp : public unitary_judge_exp<T> //intentional optimization for a ? b : c, for a < 0 .etc, use binary_judge_exp
 {
 public:
-	not_equal_0_judge_exp(data_exp_ctype<T>& dexp) : unitary_judge_exp<T>(dexp) {}
+	using unitary_judge_exp<T>::unitary_judge_exp;
 
 	virtual judge_exp_type<T> revert() const {return std::make_shared<equal_0_judge_exp<T>>(this->dexp);}
 
@@ -997,7 +995,7 @@ private:
 
 template <typename T> class binary_judge_exp : public judge_exp<T>
 {
-protected:
+public:
 	binary_judge_exp(data_exp_ctype<T>& _dexp_l, data_exp_ctype<T>& _dexp_r) : dexp_l(_dexp_l), dexp_r(_dexp_r) {}
 
 public:
@@ -1025,7 +1023,7 @@ template <typename T> class smaller_equal_judge_exp;
 template <typename T> class bigger_judge_exp : public binary_judge_exp<T>
 {
 public:
-	bigger_judge_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) : binary_judge_exp<T>(dexp_l, dexp_r) {}
+	using binary_judge_exp<T>::binary_judge_exp;
 
 	virtual judge_exp_type<T> revert() const {return std::make_shared<smaller_equal_judge_exp<T>>(this->dexp_l, this->dexp_r);}
 
@@ -1040,7 +1038,7 @@ template <typename T> class smaller_judge_exp;
 template <typename T> class bigger_equal_judge_exp : public binary_judge_exp<T>
 {
 public:
-	bigger_equal_judge_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) : binary_judge_exp<T>(dexp_l, dexp_r) {}
+	using binary_judge_exp<T>::binary_judge_exp;
 
 	virtual judge_exp_type<T> revert() const {return std::make_shared<smaller_judge_exp<T>>(this->dexp_l, this->dexp_r);}
 
@@ -1054,7 +1052,7 @@ private:
 template <typename T> class smaller_judge_exp : public binary_judge_exp<T>
 {
 public:
-	smaller_judge_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) : binary_judge_exp<T>(dexp_l, dexp_r) {}
+	using binary_judge_exp<T>::binary_judge_exp;
 
 	virtual judge_exp_type<T> revert() const {return std::make_shared<bigger_equal_judge_exp<T>>(this->dexp_l, this->dexp_r);}
 
@@ -1068,7 +1066,7 @@ private:
 template <typename T> class smaller_equal_judge_exp : public binary_judge_exp<T>
 {
 public:
-	smaller_equal_judge_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) : binary_judge_exp<T>(dexp_l, dexp_r) {}
+	using binary_judge_exp<T>::binary_judge_exp;
 
 	virtual judge_exp_type<T> revert() const {return std::make_shared<bigger_judge_exp<T>>(this->dexp_l, this->dexp_r);}
 
@@ -1083,7 +1081,7 @@ template <typename T> class not_equal_judge_exp;
 template <typename T> class equal_judge_exp : public binary_judge_exp<T>
 {
 public:
-	equal_judge_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) : binary_judge_exp<T>(dexp_l, dexp_r) {}
+	using binary_judge_exp<T>::binary_judge_exp;
 
 	virtual judge_exp_type<T> revert() const {return std::make_shared<not_equal_judge_exp<T>>(this->dexp_l, this->dexp_r);}
 
@@ -1097,7 +1095,7 @@ private:
 template <typename T> class not_equal_judge_exp : public binary_judge_exp<T>
 {
 public:
-	not_equal_judge_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) : binary_judge_exp<T>(dexp_l, dexp_r) {}
+	using binary_judge_exp<T>::binary_judge_exp;
 
 	virtual judge_exp_type<T> revert() const {return std::make_shared<equal_judge_exp<T>>(this->dexp_l, this->dexp_r);}
 
@@ -1193,9 +1191,7 @@ inline judge_exp_type<T> merge_judge_exp(judge_exp_ctype<T>& jexp_l, judge_exp_c
 template <typename T, template<typename> class Q> class negative_question_exp : public negative_data_exp<T, Q>
 {
 public:
-	negative_question_exp(judge_exp_ctype<T>& jexp) : negative_data_exp<T, Q>(jexp) {}
-	negative_question_exp(judge_exp_ctype<T>& jexp, data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) :
-		negative_data_exp<T, Q>(jexp, dexp_l, dexp_r) {}
+	using negative_data_exp<T, Q>::negative_data_exp;
 
 	virtual data_exp_type<T> final_optimize() const {return Q<T>::final_optimize()->to_negative();}
 
