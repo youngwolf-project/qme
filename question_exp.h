@@ -109,8 +109,8 @@ public:
 	virtual bool is_immediate() const {return false;}
 	virtual bool is_composite_variable() const {return false;}
 	//whether this expression can be transformed to negative
-	// 1 - without introducing negation operations, for example 2 * a to -2 *a
-	// 2 - with reducing existed negation operations, for example -a to a
+	//without introducing negation operations, for example '2 * a' to '-2 * a' or
+	//with reducing existed negation operations, for example '-a to a'
 	virtual bool is_easy_to_negative() const {return false;}
 	virtual bool is_negative() const {return false;} //needs negation operation at runtime
 	virtual int get_exponent() const {throw("unsupported get exponent operation!");}
@@ -1756,13 +1756,33 @@ private:
 		return std::make_shared<immediate_data_exp<T>>(value);
 	}
 
+	static void merge_unary_operator(char& last_operator, int& negative, int& revert, char op)
+	{
+		assert('!' == op || is_operator_1(op));
+
+		if ('!' == op)
+			++revert;
+		else if (op == last_operator)
+			throw("redundant " + std::string(1, op) + " operator!");
+		else if (0 == revert) //!a always equals to !+a and !-a no matter a is data or judgement, so following + and - can be ignored
+		{
+			if (negative < 0)
+				negative = 0; //keep leading +/- operator so we can transform judgement to data
+			if ('-' == op) //leading + is useless except to transform judgement to data
+				++negative;
+		}
+		last_operator = op;
+	}
+
 	static exp_type compile(const std::vector<std::string>& items, const std::map<std::string, sub_exp>& sub_exps,
 		size_t& index, size_t end_index)
 	{
 		if (index >= end_index)
 			throw("empty expresson!");
 
-		std::vector<char> unary_operators; //!-+
+		auto last_operator = '\0'; //+-!
+		auto negative = -1; //number of -, 0 means at least one +
+		auto revert = 0; //number of !
 
 		data_exp_type<T> data_1, data_2;
 		std::string op_1, op_2;
@@ -1781,7 +1801,7 @@ private:
 			const auto& item = items[index];
 			if ("!" == item)
 			{
-				unary_operators.push_back('!');
+				merge_unary_operator(last_operator, negative, revert, '!');
 				++index;
 				continue;
 			}
@@ -1838,7 +1858,7 @@ private:
 					if (!is_operator_1(item))
 						throw("redundant operand!");
 
-					unary_operators.push_back(item[0]);
+					merge_unary_operator(last_operator, negative, revert, item[0]);
 					++index;
 					continue;
 				}
@@ -1932,17 +1952,13 @@ private:
 				else
 					parsed_exp = parse_data(item);
 
-				auto last_operator = '\0';
-				for (auto iter = unary_operators.crbegin(); iter != unary_operators.crend(); last_operator = *iter, ++iter)
-				{
-					if ('!' == *iter)
-						parsed_exp = to_judge_exp(parsed_exp)->revert();
-					else if (*iter == last_operator)
-						throw("redundant " + std::string(1, last_operator) + " operator!");
-					else
-						parsed_exp = '-' == *iter ? to_data_exp(parsed_exp)->to_negative() : to_data_exp(parsed_exp);
-				}
-				unary_operators.clear();
+				if (revert > 0)
+					parsed_exp = 1 == (revert & 1) ? to_judge_exp(parsed_exp)->revert() : to_judge_exp(parsed_exp);
+				if (negative >= 0)
+					parsed_exp = 1 == (negative & 1) ? to_data_exp(parsed_exp)->to_negative() : to_data_exp(parsed_exp);
+				last_operator = '\0';
+				negative = -1;
+				revert = 0;
 
 				if (!data_1 && parsed_exp->is_judge())
 					merge_judge_exp(judge_1, judge_2, lop_1, lop_2, std::dynamic_pointer_cast<judge_exp<T>>(parsed_exp));
@@ -1950,8 +1966,10 @@ private:
 					merge_data_exp(data_1, data_2, op_1, op_2, to_data_exp(parsed_exp));
 			}
 
-			if (!unary_operators.empty())
-				throw("unexpected " + std::string(1, unary_operators.back()) + " operator!");
+			if (negative >= 0)
+				throw("unexpected +/- operator!");
+			else if (revert > 0)
+				throw("unexpected ! operator!");
 
 			++index;
 		}
