@@ -1670,7 +1670,9 @@ private:
 				merge_judge_exp(judge_1, judge_2, lop_1, lop_2, make_binary_judge_exp(dc, data_1, c));
 			else if (judge_1)
 			{
-				assert(!judge_2 && lop_1.empty() && lop_2.empty());
+				if (judge_2 || !lop_1.empty() || !lop_2.empty())
+					throw ("missing logical operand!");
+
 				judge_1 = make_binary_judge_exp(dc, transform_exp(judge_1), c);
 			}
 			dc.reset();
@@ -1686,37 +1688,18 @@ private:
 		data_exp_type<T>& data_1, data_exp_type<T>& data_2, std::string& op_1, std::string& op_2,
 		judge_exp_type<T>& judge_1, judge_exp_type<T>& judge_2, std::string& lop_1, std::string& lop_2)
 	{
-		if (data_1)
-			finish_data_exp(data_1, std::move(data_2), op_1, op_2);
-
-		if (!c.empty() || dc)
+		if (!c.empty() || dc || !data_1 || judge_1)
 		{
-			assert(!c.empty() && dc);
-			if (data_1)
-				merge_judge_exp(judge_1, judge_2, lop_1, lop_2, make_binary_judge_exp(dc, data_1, c));
-			else if (judge_1)
+			finish_data_and_merge_judge_exp(dc, c, data_1, data_2, op_1, op_2, judge_1, judge_2, lop_1, lop_2);
+			finish_judge_exp(judge_1, std::move(judge_2), lop_1, lop_2);
+			if (to_data)
 			{
-				assert(!judge_2 && lop_1.empty() && lop_2.empty());
-				judge_1 = make_binary_judge_exp(dc, transform_exp(judge_1), c);
+				data_1 = transform_exp(judge_1);
+				judge_1.reset();
 			}
-			dc.reset();
-			c.clear();
 		}
 		else if (data_1)
-		{
-			if (!judge_1)
-				return;
-
-			merge_judge_exp(judge_1, judge_2, lop_1, lop_2, transform_exp(data_1));
-		}
-
-		data_1.reset();
-		finish_judge_exp(judge_1, std::move(judge_2), lop_1, lop_2);
-		if (to_data)
-		{
-			data_1 = transform_exp(judge_1);
-			judge_1.reset();
-		}
+			finish_data_exp(data_1, std::move(data_2), op_1, op_2);
 	}
 
 	static exp_type compile(const std::vector<std::string>& items, const std::map<std::string, sub_exp>& sub_exps)
@@ -1960,7 +1943,7 @@ private:
 				negative = -1;
 				revert = 0;
 
-				if (!data_1 && parsed_exp->is_judge())
+				if (!dc && !data_1 && parsed_exp->is_judge())
 					merge_judge_exp(judge_1, judge_2, lop_1, lop_2, std::dynamic_pointer_cast<judge_exp<T>>(parsed_exp));
 				else
 					merge_data_exp(data_1, data_2, op_1, op_2, to_data_exp(parsed_exp));

@@ -176,10 +176,11 @@ int main(int argc, const char* argv[])
 		{"-+-!-!!!a", 1, 1},
 		{"-!-!!!a", -1, -1},
 		{"a > 0 || b > 0 || + c", 1, 1},
+		{"a ? a > 0 || b > (c > 0) : 0", 0, 1},
 		{"a > 0 ? a > 0 || b > 0 || + c : b + c", 12, 1},
 		{"(a > 0) > (c > 0) ? a > 0 : c > 0", 1, 1},
 
-		//following expressions (18 entries) are supposed to be invalid:
+		//following expressions (27 entries) are supposed to be invalid:
 		{"?a"},
 		{":a"},
 		{"a : b"},
@@ -198,6 +199,15 @@ int main(int argc, const char* argv[])
 		{"(a > 0) ? a + : b"},
 		{"!(a > 0) ? a : b : c"},
 		{"!(a > 0) ? a : b : c : 0"},
+		{"a ? a > 0 || b > : 0"},
+		{"a ? a > 0 || b > 0 || c > : 0"},
+		{"a ? 0 : a > 0 || b > 0 && c >"},
+		{"|| b > 0 ? a : b"},
+		{"b > 0 || ? a : b"},
+		{"a > 0 || b > ? a : b"},
+		{"a > || b > 0 ? a : b"},
+		{"a > 0 || b > 0 || c > ? a : b"},
+		{"a > 0 || b > || c > 0 ? a : b"},
 	};
 
 	auto cb = [](const std::map<std::string, float>& dm, const std::string& variable_name) {
