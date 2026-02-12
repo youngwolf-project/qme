@@ -1758,18 +1758,24 @@ private:
 
 	static judge_exp_type<T> bang(judge_exp_ctype<T>& judge)
 	{
-		if (O::level() < 2 && judge->is_composite() && !std::dynamic_pointer_cast<not_judge_exp<T>>(judge) &&
-			(judge->get_left_item()->is_composite() || judge->get_right_item()->is_composite())) //not_judge_exp is composite but has no right operand, please note.
-			return std::make_shared<not_judge_exp<T>>(judge);
+		if (O::level() < 2 && !judge->is_reverser() && judge->is_composite())
+		{
+			auto& left = judge->get_left_item(), right = judge->get_right_item();
+			if ((!left->is_reverser() && left->is_composite()) || (!right->is_reverser() && right->is_composite()))
+				return std::make_shared<not_judge_exp<T>>(judge);
+		}
 
 		return judge->bang();
 	}
 
 	static data_exp_type<T> to_negative(data_exp_ctype<T>& data)
 	{
-		if (O::level() < 2 && data->is_composite() && !std::dynamic_pointer_cast<negative_data_exp<T>>(data) &&
-			(data->get_left_item()->is_composite() || data->get_right_item()->is_composite())) //negative_data_exp is composite but has no right operand, please note.
-			return std::make_shared<negative_data_exp<T>>(data);
+		if (O::level() < 2 && !data->is_reverser() && data->is_composite())
+		{
+			auto& left = data->get_left_item(), right = data->get_right_item();
+			if ((!left->is_reverser() && left->is_composite()) || (!right->is_reverser() && right->is_composite()))
+				return std::make_shared<negative_data_exp<T>>(data);
+		}
 
 		return data->to_negative();
 	}
