@@ -79,10 +79,17 @@ template<typename O> inline bool is_same_operator_level(char op_1, char op_2)
 }
 /////////////////////////////////////////////////////////////////////////////////////////
 
+class exp;
+using exp_type = std::shared_ptr<exp>;
+using exp_ctype = const exp_type;
 class exp
 {
 protected:
 	virtual ~exp() {}
+
+public:
+	//for optimization level O0/O1, composite exp (expect reverser) should not be reversed, otherwise, recursion happens.
+	static bool is_composite(exp_ctype& e) {return e->is_composite() && !e->is_reverser();}
 
 public:
 	virtual bool is_data() const {return false;}
@@ -114,13 +121,14 @@ public:
 	//with reducing existed negation operations, for example '-a to a'
 	virtual bool is_easy_to_negative() const {return false;}
 	virtual bool is_negative() const {return false;} //needs negation operation at runtime
-	virtual int get_exponent() const {throw("unsupported get exponent operation!");}
-	virtual T get_multiplier() const {throw("unsupported get multiplier operation!");}
-	virtual T get_immediate_value() const {throw("unsupported get immediate value operation!");}
-	virtual const std::string& get_variable_name() const {throw("unsupported get variable name operation!");}
-	virtual char get_operator() const {throw("unsupported get operator operation!");}
-	virtual data_exp_ctype<T>& get_left_item() const {throw("unsupported get left item operation!");}
-	virtual data_exp_ctype<T>& get_right_item() const {throw("unsupported get right item operation!");}
+
+	virtual T get_immediate_value() const {throw("unsupported get immediate value operation!");} //valid if is_immediate()
+	virtual int get_exponent() const {throw("unsupported get exponent operation!");} //valid if is_composite_variable()
+	virtual T get_multiplier() const {throw("unsupported get multiplier operation!");} //valid if is_composite_variable()
+	virtual const std::string& get_variable_name() const {throw("unsupported get variable name operation!");} //valid if is_composite_variable()
+	virtual char get_operator() const {throw("unsupported get operator operation!");} //valid if is_composite() && !is_reverser()
+	virtual data_exp_ctype<T>& get_left_item() const {throw("unsupported get left item operation!");} //valid if is_composite() || is_reverser()
+	virtual data_exp_ctype<T>& get_right_item() const {throw("unsupported get right item operation!");} //valid if is_composite()
 
 	virtual bool merge_with(char, data_exp_ctype<T>&) {return false;}
 	virtual bool merge_with(data_exp_ctype<T>&, char) {return false;}
@@ -507,7 +515,7 @@ public:
 
 	virtual int get_depth() const {return 1 + dexp_l->get_depth();}
 	virtual void show_immediate_value() const {dexp_l->show_immediate_value();}
-	//dexp_l has no chance to be a negative_data_exp (otherwise, recursion happens), see compiler::to_negative.
+	//dexp_l has no chance to be a negative_data_exp, otherwise, recursion happens, see compiler::to_negative.
 	virtual bool is_composite() const {return dexp_l->is_composite();}
 	virtual bool is_reverser() const {return is_composite();}
 	virtual bool is_easy_to_negative() const {return true;}
@@ -518,7 +526,6 @@ public:
 	virtual T operator()(const std::function<T(const std::string&)>& cb) const {return -(*dexp_l)(cb);}
 
 private:
-	virtual T safe_execute(const std::function<T(const std::string&)>& cb) const {return operator()(cb);}
 	virtual void clear() {dexp_l.reset();}
 
 private:
@@ -755,7 +762,7 @@ template <typename T, typename O> inline data_exp_type<T> merge_data_exp(data_ex
 		auto data = dexp_l->trim_myself();
 		return data ? data : dexp_l;
 	}
-	else if (dexp_r->is_composite() && !dexp_r->is_reverser())
+	else if (exp::is_composite(dexp_r))
 	{
 		auto op_2 = dexp_r->get_operator();
 		if (is_same_operator_level<O>(op, op_2))
@@ -914,6 +921,7 @@ template <typename T> inline T safe_execute(data_exp_ctype<T>& dexp, const std::
 		}
 	);
 
+	assert(1 == res.size());
 	return res.front();
 }
 
@@ -937,9 +945,9 @@ template <typename T> class judge_exp : public exp
 {
 public:
 	virtual bool is_judge() const {return true;}
-	virtual const std::string& get_operator() const {throw("unsupported get operator operation!");}
-	virtual judge_exp_ctype<T>& get_left_item() const {throw("unsupported get left item operation!");}
-	virtual judge_exp_ctype<T>& get_right_item() const {throw("unsupported get right item operation!");}
+	virtual const std::string& get_operator() const {throw("unsupported get operator operation!");} //valid if is_composite() && !is_reverser()
+	virtual judge_exp_ctype<T>& get_left_item() const {throw("unsupported get left item operation!");} //valid if is_composite() || is_reverser()
+	virtual judge_exp_ctype<T>& get_right_item() const {throw("unsupported get right item operation!");} //valid if is_composite()
 
 	virtual judge_exp_type<T> bang() const = 0;
 	virtual void final_optimize() = 0;
@@ -958,9 +966,9 @@ template <typename T> inline bool safe_execute(judge_exp_ctype<T>& jexp, const s
 	travel_exp<judge_exp_type<T>>(jexp,
 		[&](judge_exp_ctype<T>& left) {re = left->safe_execute(cb);},
 		//this runtime judgement will impact efficiency, but we have no choice, return false - continue, true - backtrack
-		[&](judge_exp_ctype<T>& parent) {return parent->is_reverser() ? true : ("&&" == parent->get_operator() ? !re : re);},
+		[&](judge_exp_ctype<T>& parent) {return parent->is_reverser() ? (re = !re, true) : ("&&" == parent->get_operator() ? !re : re);},
 		[&](judge_exp_ctype<T>& right) {re = right->safe_execute(cb);},
-		[&](judge_exp_ctype<T>& parent) {if (parent->is_reverser()) {re = !re;}}
+		[](judge_exp_ctype<T>&) {}
 	);
 
 	return re;
@@ -1325,7 +1333,6 @@ private:
 };
 /////////////////////////////////////////////////////////////////////////////////////////
 
-using exp_type = std::shared_ptr<exp>;
 template <typename T = float, typename O = O3> class compiler
 {
 private:
@@ -1338,7 +1345,7 @@ private:
 
 public:
 	//data exp to judge exp, or judge exp to data exp
-	static exp_type transform_exp(const exp_type& exp)
+	static exp_type transform_exp(exp_ctype& exp)
 	{
 		if (exp->is_data())
 			return transform_exp(std::dynamic_pointer_cast<data_exp<T>>(exp));
@@ -1347,8 +1354,8 @@ public:
 	static data_exp_type<T> transform_exp(judge_exp_ctype<T>& judge) {assert(judge); return std::make_shared<simple_question_exp<T>>(judge);}
 	static judge_exp_type<T> transform_exp(data_exp_ctype<T>& data) {assert(data); return std::make_shared<not_equal_0_judge_exp<T>>(data);}
 
-	static data_exp_type<T> to_data_exp(const exp_type& exp) {return std::dynamic_pointer_cast<data_exp<T>>(exp->is_data() ? exp : transform_exp(exp));}
-	static judge_exp_type<T> to_judge_exp(const exp_type& exp) {return std::dynamic_pointer_cast<judge_exp<T>>(exp->is_judge() ? exp : transform_exp(exp));}
+	static data_exp_type<T> to_data_exp(exp_ctype& exp) {return std::dynamic_pointer_cast<data_exp<T>>(exp->is_data() ? exp : transform_exp(exp));}
+	static judge_exp_type<T> to_judge_exp(exp_ctype& exp) {return std::dynamic_pointer_cast<judge_exp<T>>(exp->is_judge() ? exp : transform_exp(exp));}
 
 	template <template<typename> class Exp = data_exp> static std::shared_ptr<Exp<T>> compile(const char* statement)
 		{return compile<Exp>(std::string(statement));}
@@ -1758,24 +1765,16 @@ private:
 
 	static judge_exp_type<T> bang(judge_exp_ctype<T>& judge)
 	{
-		if (O::level() < 2 && !judge->is_reverser() && judge->is_composite())
-		{
-			auto& left = judge->get_left_item(), right = judge->get_right_item();
-			if ((!left->is_reverser() && left->is_composite()) || (!right->is_reverser() && right->is_composite()))
-				return std::make_shared<not_judge_exp<T>>(judge);
-		}
+		if (O::level() < 2 && exp::is_composite(judge) && (exp::is_composite(judge->get_left_item()) || exp::is_composite(judge->get_right_item())))
+			return std::make_shared<not_judge_exp<T>>(judge);
 
 		return judge->bang();
 	}
 
 	static data_exp_type<T> to_negative(data_exp_ctype<T>& data)
 	{
-		if (O::level() < 2 && !data->is_reverser() && data->is_composite())
-		{
-			auto& left = data->get_left_item(), right = data->get_right_item();
-			if ((!left->is_reverser() && left->is_composite()) || (!right->is_reverser() && right->is_composite()))
-				return std::make_shared<negative_data_exp<T>>(data);
-		}
+		if (O::level() < 2 && exp::is_composite(data) && (exp::is_composite(data->get_left_item()) || exp::is_composite(data->get_right_item())))
+			return std::make_shared<negative_data_exp<T>>(data);
 
 		return data->to_negative();
 	}
