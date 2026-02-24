@@ -95,7 +95,7 @@ public:
 	virtual bool is_data() const {return false;}
 	virtual bool is_judge() const {return false;}
 	virtual bool is_composite() const {return false;}
-	virtual bool is_reverser() const {return false;} //for safe_execute and safe_delete only, reverser is a composite exp, but has left operand only.
+	virtual bool is_reverser() const {return false;} //for safe_execute and safe_delete only, reverser is always a composite exp, but has left operand only.
 	virtual int get_depth() const {return 1;}
 	virtual void show_immediate_value() const {}
 
@@ -116,8 +116,7 @@ public:
 	virtual bool is_data() const {return true;}
 	virtual bool is_immediate() const {return false;}
 	virtual bool is_composite_variable() const {return false;}
-	//whether this expression can be transformed to negative
-	//without introducing negation operations, for example '2 * a' to '-2 * a' or
+	//whether this expression can be transformed to negative without introducing negation operations, for example '2 * a' to '-2 * a' or
 	//with reducing existed negation operations, for example '-a to a'
 	virtual bool is_easy_to_negative() const {return false;}
 	virtual bool is_negative() const {return false;} //needs negation operation at runtime
@@ -128,7 +127,7 @@ public:
 	virtual const std::string& get_variable_name() const {throw("unsupported get variable name operation!");} //valid if is_composite_variable()
 	virtual char get_operator() const {throw("unsupported get operator operation!");} //valid if is_composite() && !is_reverser()
 	virtual data_exp_ctype<T>& get_left_item() const {throw("unsupported get left item operation!");} //valid if is_composite() || is_reverser()
-	virtual data_exp_ctype<T>& get_right_item() const {throw("unsupported get right item operation!");} //valid if is_composite()
+	virtual data_exp_ctype<T>& get_right_item() const {throw("unsupported get right item operation!");} //valid if is_composite() && !is_reverser()
 
 	virtual bool merge_with(char, data_exp_ctype<T>&) {return false;}
 	virtual bool merge_with(data_exp_ctype<T>&, char) {return false;}
@@ -221,9 +220,9 @@ protected:
 	binary_data_exp(data_exp_ctype<T>& _dexp_l, data_exp_ctype<T>& _dexp_r, char _op) : op(_op), dexp_l(_dexp_l), dexp_r(_dexp_r) {}
 
 public:
+	virtual bool is_composite() const {return true;}
 	virtual int get_depth() const {return 1 + std::max(dexp_l->get_depth(), dexp_r->get_depth());}
 	virtual void show_immediate_value() const {dexp_l->show_immediate_value(); dexp_r->show_immediate_value();}
-	virtual bool is_composite() const {return true;}
 	virtual bool is_easy_to_negative() const
 		{return is_negative() || (is_operator_2(op) && (dexp_l->is_easy_to_negative() || dexp_r->is_easy_to_negative()));}
 	virtual bool is_negative() const
@@ -513,11 +512,11 @@ template <typename T> class negative_data_exp : public data_exp<T>
 public:
 	negative_data_exp(data_exp_ctype<T>& _dexp_l) : dexp_l(_dexp_l) {}
 
-	virtual int get_depth() const {return 1 + dexp_l->get_depth();}
-	virtual void show_immediate_value() const {dexp_l->show_immediate_value();}
-	//dexp_l has no chance to be a negative_data_exp, otherwise, recursion happens, see compiler::to_negative.
+	//dexp_l has no chance to be a negative_data_exp too, otherwise, recursion happens, see compiler::to_negative.
 	virtual bool is_composite() const {return dexp_l->is_composite();}
 	virtual bool is_reverser() const {return is_composite();}
+	virtual int get_depth() const {return 1 + dexp_l->get_depth();}
+	virtual void show_immediate_value() const {dexp_l->show_immediate_value();}
 	virtual bool is_easy_to_negative() const {return true;}
 	virtual bool is_negative() const {return true;}
 	virtual data_exp_ctype<T>& get_left_item() const {return dexp_l;}
@@ -947,7 +946,7 @@ public:
 	virtual bool is_judge() const {return true;}
 	virtual const std::string& get_operator() const {throw("unsupported get operator operation!");} //valid if is_composite() && !is_reverser()
 	virtual judge_exp_ctype<T>& get_left_item() const {throw("unsupported get left item operation!");} //valid if is_composite() || is_reverser()
-	virtual judge_exp_ctype<T>& get_right_item() const {throw("unsupported get right item operation!");} //valid if is_composite()
+	virtual judge_exp_ctype<T>& get_right_item() const {throw("unsupported get right item operation!");} //valid if is_composite() && !is_reverser()
 
 	virtual judge_exp_type<T> bang() const = 0;
 	virtual void final_optimize() = 0;
@@ -1155,31 +1154,6 @@ inline judge_exp_type<T> make_binary_judge_exp(data_exp_ctype<T>& dc_1, data_exp
 		throw("unknown compare operator " + c);
 }
 
-template <typename T> class logical_exp : public judge_exp<T>
-{
-protected:
-	logical_exp(judge_exp_ctype<T>& _jexp_l, judge_exp_ctype<T>& _jexp_r, const std::string& _lop) :
-		lop(_lop), jexp_l(_jexp_l), jexp_r(_jexp_r) {}
-
-public:
-	virtual bool is_composite() const {return true;}
-	virtual int get_depth() const {return 1 + std::max(jexp_l->get_depth(), jexp_l->get_depth());}
-	virtual void show_immediate_value() const {jexp_l->show_immediate_value(); jexp_r->show_immediate_value();}
-	virtual const std::string& get_operator() const {return lop;}
-	virtual judge_exp_ctype<T>& get_left_item() const {return jexp_l;}
-	virtual judge_exp_ctype<T>& get_right_item() const {return jexp_r;}
-
-	virtual void final_optimize() {jexp_l->final_optimize(); jexp_r->final_optimize();}
-
-private:
-	virtual bool safe_execute(const std::function<T(const std::string&)>&) const {throw("unsupported safe execute operation!");}
-	virtual void clear() {jexp_l.reset(); jexp_r.reset();}
-
-private:
-	std::string lop;
-	judge_exp_type<T> jexp_l, jexp_r;
-};
-
 //for optimization level O0 and O1 only, eliminate recursion for logical NOT operations
 template <typename T> class not_judge_exp : public judge_exp<T>
 {
@@ -1203,6 +1177,31 @@ private:
 
 private:
 	judge_exp_type<T> jexp_l;
+};
+
+template <typename T> class logical_exp : public judge_exp<T>
+{
+protected:
+	logical_exp(judge_exp_ctype<T>& _jexp_l, judge_exp_ctype<T>& _jexp_r, const std::string& _lop) :
+		lop(_lop), jexp_l(_jexp_l), jexp_r(_jexp_r) {}
+
+public:
+	virtual bool is_composite() const {return true;}
+	virtual int get_depth() const {return 1 + std::max(jexp_l->get_depth(), jexp_l->get_depth());}
+	virtual void show_immediate_value() const {jexp_l->show_immediate_value(); jexp_r->show_immediate_value();}
+	virtual const std::string& get_operator() const {return lop;}
+	virtual judge_exp_ctype<T>& get_left_item() const {return jexp_l;}
+	virtual judge_exp_ctype<T>& get_right_item() const {return jexp_r;}
+
+	virtual void final_optimize() {jexp_l->final_optimize(); jexp_r->final_optimize();}
+
+private:
+	virtual bool safe_execute(const std::function<T(const std::string&)>&) const {throw("unsupported safe execute operation!");}
+	virtual void clear() {jexp_l.reset(); jexp_r.reset();}
+
+private:
+	std::string lop;
+	judge_exp_type<T> jexp_l, jexp_r;
 };
 
 template <typename T> class or_judge_exp;
@@ -1231,7 +1230,7 @@ public:
 };
 
 template <typename T>
-inline judge_exp_type<T> merge_judge_exp(judge_exp_ctype<T>& jexp_l, judge_exp_ctype<T>& jexp_r, const std::string& lop)
+inline judge_exp_type<T> make_logical_exp(judge_exp_ctype<T>& jexp_l, judge_exp_ctype<T>& jexp_r, const std::string& lop)
 {
 	if ("&&" == lop)
 		return std::make_shared<and_judge_exp<T>>(jexp_l, jexp_r);
@@ -1688,7 +1687,7 @@ private:
 			if (lop_1.empty())
 				throw("missing logical operator!");
 
-			judge_1 = qme::merge_judge_exp(judge_1, judge_2, lop_1);
+			judge_1 = make_logical_exp(judge_1, judge_2, lop_1);
 			lop_1.clear();
 			judge_2.reset();
 		}
@@ -1767,7 +1766,6 @@ private:
 	{
 		if (O::level() < 2 && exp::is_composite(judge) && (exp::is_composite(judge->get_left_item()) || exp::is_composite(judge->get_right_item())))
 			return std::make_shared<not_judge_exp<T>>(judge);
-
 		return judge->bang();
 	}
 
@@ -1775,7 +1773,6 @@ private:
 	{
 		if (O::level() < 2 && exp::is_composite(data) && (exp::is_composite(data->get_left_item()) || exp::is_composite(data->get_right_item())))
 			return std::make_shared<negative_data_exp<T>>(data);
-
 		return data->to_negative();
 	}
 
