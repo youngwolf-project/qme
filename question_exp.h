@@ -88,21 +88,17 @@ protected:
 	virtual ~exp() {}
 
 public:
-	//for optimization level O0/O1, composite exp (expect reverser) should not be reversed, otherwise, recursion happens.
-	static bool is_composite(exp_ctype& e) {return e->is_composite() && !e->is_reverser();}
+	//for optimization level O0/O1, composite exp (expect reverser and selector) should not be reversed, otherwise, recursion happens.
+	static bool is_composite(exp_ctype& e) {return e->is_composite() && !e->is_reverser() && !e->is_selector();}
 
 public:
 	virtual bool is_data() const {return false;}
 	virtual bool is_judge() const {return false;}
 	virtual bool is_composite() const {return false;}
-	virtual bool is_reverser() const {return false;} //for safe_execute and safe_delete only, reverser is always a composite exp, but has left operand only.
+	virtual bool is_reverser() const {return false;} //for safe_execute and safe_delete only, reverser is dummy composite exp and has left operand only.
+	virtual bool is_selector() const {return false;} //for safe_delete only, selector is dummy composite exp.
 	virtual int get_depth() const {return 1;}
 	virtual void show_immediate_value() const {}
-
-private:
-	template <typename T, template<typename> class Exp> friend inline void safe_delete(const std::shared_ptr<Exp<T>>&);
-	virtual void safe_delete() const {}
-	virtual void clear() {}
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -110,6 +106,7 @@ template <typename T> class data_exp;
 template <typename T> using data_exp_type = std::shared_ptr<data_exp<T>>;
 template <typename T> using data_exp_ctype = const data_exp_type<T>;
 template <typename T> inline T safe_execute(data_exp_ctype<T>&, const std::function<T(const std::string&)>&);
+template <typename T> inline void safe_delete(data_exp_ctype<T>&);
 template <typename T> class data_exp : public exp
 {
 public:
@@ -139,7 +136,11 @@ public:
 
 private:
 	friend T safe_execute<T>(data_exp_ctype<T>&, const std::function<T(const std::string&)>&);
-	virtual T safe_execute(const std::function<T(const std::string&)>& cb) const {return operator()(cb);}
+	//for question_exp only (used in safe_execute)
+	virtual bool select_branch(data_exp_type<T>&, const std::function<T(const std::string&)>&) const {return false;}
+
+	friend void safe_delete<T>(data_exp_ctype<T>&);
+	virtual void clear() {}
 };
 /////////////////////////////////////////////////////////////////////////////////////////
 
@@ -451,7 +452,6 @@ public:
 	}
 
 private:
-	virtual T safe_execute(const std::function<T(const std::string&)>&) const {throw("unsupported safe execute operation!");}
 	virtual void clear() {dexp_l.reset(); dexp_r.reset();}
 
 private:
@@ -513,8 +513,8 @@ public:
 	negative_data_exp(data_exp_ctype<T>& _dexp_l) : dexp_l(_dexp_l) {}
 
 	//dexp_l has no chance to be a negative_data_exp too, otherwise, recursion happens, see compiler::to_negative.
-	virtual bool is_composite() const {return dexp_l->is_composite();}
-	virtual bool is_reverser() const {return is_composite();}
+	virtual bool is_composite() const {return true;}
+	virtual bool is_reverser() const {return true;}
 	virtual int get_depth() const {return 1 + dexp_l->get_depth();}
 	virtual void show_immediate_value() const {dexp_l->show_immediate_value();}
 	virtual bool is_easy_to_negative() const {return true;}
@@ -819,9 +819,12 @@ inline data_exp_type<T> merge_data_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype
 // qme::O0/qme::O1 to compile it,
 // qme::safe_execute to execute it and
 // qme::safe_delete to delete it,
-// then no recursion will be introduced (except question mark expression used as sub expression).
+//then recursion will be suppressed, currently, recursion in data expression has been eliminated, but still exists in judge expression
+//if it has question expression as its data expressions (for example, '(a > 0 ? b : c) > 0 ? 1 : 2', the first '>' judgment will be
+//performed within the second '>' judgment, recursion happens), please note.
+//
 //with optimization level qme::O0/qme::O1, following functions are still available, if you're encountering above situation,
-// you should not call them manually, please note:
+//you should not call them manually, please note:
 // is_easy_to_negative
 // is_negative
 // get_depth
@@ -830,60 +833,65 @@ inline data_exp_type<T> merge_data_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype
 // trim_myself
 // to_negative
 // final_optimize
-//return the depth of this expression (not like the get_depth interface, recursion is not applied during the calculation)
-// to get the max depth, the short_circuit_controller must always returns false, please note.
+//return the depth of this expression (not like the get_depth interface, recursion is not applied during the calculation),
+//to get the max depth, the short_circuit_controller must always returns false if the right item is valid, please note.
 template <typename T> inline int travel_exp(const T& exp,
 	const std::function<void(const T&)>& left_handler,
 	const std::function<bool(const T&)>& short_circuit_controller, //false - continue, true - backtrack
 	const std::function<void(const T&)>& right_handler,
-	const std::function<void(const T&)>& backtrack_handler)
+	const std::function<void(const T&)>& backtrack_handler,
+	const std::function<void(T&)>& branch_selector = [](T&) {})
 {
-	if (!exp->is_composite())
-		return left_handler(exp), 1;
+	auto trimmed_exp = exp;
+	branch_selector(trimmed_exp);
+
+	if (!trimmed_exp->is_composite())
+		return left_handler(trimmed_exp), 1;
 
 	auto depth = 1, max_depth = 0;
 	std::list<std::pair<T, bool>> exps; //true - left branch, false - right branch
-	exps.emplace_back(exp, true);
+	exps.emplace_back(std::move(trimmed_exp), true);
 	auto direction = 0; //0 - left-bottom, 1 - right-bottom, 2 - top-left
-	for (auto iter = exps.crbegin(); iter != exps.crend();)
+	for (auto iter = exps.rbegin(); iter != exps.rend();)
 		if (0 == direction)
 		{
-			++depth;
 			auto left = iter->first->get_left_item();
+			branch_selector(left); //do not ++depth even if the branch_selector replaced the 'left' expression,
+								   //because we don't know if this happened in following backtrack_handler
 			if (left->is_composite())
 			{
+				++depth;
 				exps.emplace_back(left, true);
-				iter = exps.crbegin();
+				iter = exps.rbegin();
 			}
 			else
 			{
 				left_handler(left);
 				direction = 1;
-				max_depth = std::max(depth--, max_depth);
+				max_depth = std::max(depth + 1, max_depth);
 			}
 		}
 		else if (1 == direction)
 		{
-			++depth;
 			if (short_circuit_controller(iter->first))
-			{
 				direction = 2;
-				max_depth = std::max(depth--, max_depth);
-			}
 			else
 			{
 				auto right = iter->first->get_right_item();
+				branch_selector(right); //do not ++depth even if the branch_selector replaced the 'right' expression,
+										//because we don't know if this happened in following backtrack_handler
 				if (right->is_composite())
 				{
+					++depth;
 					exps.emplace_back(right, false);
-					iter = exps.crbegin();
+					iter = exps.rbegin();
 					direction = 0;
 				}
 				else
 				{
 					right_handler(right);
 					direction = 2;
-					max_depth = std::max(depth--, max_depth);
+					max_depth = std::max(depth + 1, max_depth);
 				}
 			}
 		}
@@ -898,6 +906,7 @@ template <typename T> inline int travel_exp(const T& exp,
 			}
 		}
 
+	assert(0 == depth && max_depth > 1);
 	return max_depth;
 }
 
@@ -905,9 +914,9 @@ template <typename T> inline T safe_execute(data_exp_ctype<T>& dexp, const std::
 {
 	std::list<immediate_data_exp<T>> res;
 	travel_exp<data_exp_type<T>>(dexp,
-		[&](data_exp_ctype<T>& left) {res.emplace_back(left->safe_execute(cb));},
+		[&](data_exp_ctype<T>& left) {res.emplace_back((*left)(cb));},
 		[](data_exp_ctype<T>& parent) {return parent->is_reverser();},
-		[&](data_exp_ctype<T>& right) {res.emplace_back(right->safe_execute(cb));},
+		[&](data_exp_ctype<T>& right) {res.emplace_back((*right)(cb));},
 		[&](data_exp_ctype<T>& parent) {
 			if (parent->is_reverser())
 				res.back().negate();
@@ -915,22 +924,23 @@ template <typename T> inline T safe_execute(data_exp_ctype<T>& dexp, const std::
 			{
 				T re = res.back();
 				res.pop_back();
-				res.back().merge(parent->get_operator(), re); //this runtime merging will impact efficiency, but we have no choice
+				res.back().merge(parent->get_operator(), re); //this runtime merging will impact performance, but we have no choice
 			}
-		}
+		},
+		[&](data_exp_type<T>& parent) {while (parent->select_branch(parent, cb));}
 	);
 
 	assert(1 == res.size());
 	return res.front();
 }
 
-template <typename T, template<typename> class Exp> inline void safe_delete(const std::shared_ptr<Exp<T>>& exp)
+template <typename T> inline void safe_delete(data_exp_ctype<T>& dexp)
 {
-	travel_exp<std::shared_ptr<Exp<T>>>(exp,
-		[](const std::shared_ptr<Exp<T>>& left) {left->safe_delete();},
-		[](const std::shared_ptr<Exp<T>>& parent) {return parent->is_reverser();},
-		[](const std::shared_ptr<Exp<T>>& right) {right->safe_delete();},
-		[](const std::shared_ptr<Exp<T>>& parent) {parent->clear();}
+	travel_exp<data_exp_type<T>>(dexp,
+		[](data_exp_ctype<T>& left) {},
+		[](data_exp_ctype<T>& parent) {return parent->is_reverser();},
+		[](data_exp_ctype<T>& right) {},
+		[](data_exp_ctype<T>& parent) {parent->clear();}
 	);
 }
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -940,6 +950,7 @@ template <typename T> class judge_exp;
 template <typename T> using judge_exp_type = std::shared_ptr<judge_exp<T>>;
 template <typename T> using judge_exp_ctype = const judge_exp_type<T>;
 template <typename T> inline bool safe_execute(judge_exp_ctype<T>&, const std::function<T(const std::string&)>&);
+template <typename T> inline void safe_delete(judge_exp_ctype<T>&);
 template <typename T> class judge_exp : public exp
 {
 public:
@@ -957,6 +968,10 @@ private:
 	friend bool safe_execute<T>(judge_exp_ctype<T>&, const std::function<T(const std::string&)>&);
 	//is recursion fully eliminated or not depends on the data_exp(s) this judge_exp holds
 	virtual bool safe_execute(const std::function<T(const std::string&)>&) const = 0;
+
+	friend void safe_delete<T>(judge_exp_ctype<T>&);
+	virtual void safe_delete() const {}
+	virtual void clear() {}
 };
 
 template <typename T> inline bool safe_execute(judge_exp_ctype<T>& jexp, const std::function<T(const std::string&)>& cb)
@@ -964,13 +979,23 @@ template <typename T> inline bool safe_execute(judge_exp_ctype<T>& jexp, const s
 	auto re = false;
 	travel_exp<judge_exp_type<T>>(jexp,
 		[&](judge_exp_ctype<T>& left) {re = left->safe_execute(cb);},
-		//this runtime judgement will impact efficiency, but we have no choice, return false - continue, true - backtrack
+		//this runtime judgement will impact performance, but we have no choice, return false - continue, true - backtrack
 		[&](judge_exp_ctype<T>& parent) {return parent->is_reverser() ? (re = !re, true) : ("&&" == parent->get_operator() ? !re : re);},
 		[&](judge_exp_ctype<T>& right) {re = right->safe_execute(cb);},
 		[](judge_exp_ctype<T>&) {}
 	);
 
 	return re;
+}
+
+template <typename T> inline void safe_delete(judge_exp_ctype<T>& jexp)
+{
+	travel_exp<judge_exp_type<T>>(jexp,
+		[](judge_exp_ctype<T>& left) {left->safe_delete();},
+		[](judge_exp_ctype<T>& parent) {return parent->is_reverser();},
+		[](judge_exp_ctype<T>& right) {right->safe_delete();},
+		[](judge_exp_ctype<T>& parent) {parent->clear();}
+	);
 }
 
 template <typename T> class unitary_judge_exp : public judge_exp<T>
@@ -1242,37 +1267,21 @@ inline judge_exp_type<T> make_logical_exp(judge_exp_ctype<T>& jexp_l, judge_exp_
 /////////////////////////////////////////////////////////////////////////////////////////
 
 /////////////////////////////////////////////////////////////////////////////////////////
-template <typename T, template<typename> class Q> class negative_question_exp : public Q<T>
-{
-public:
-	using Q<T>::Q;
-
-	virtual int get_depth() const {return 1 + Q<T>::get_depth();}
-	virtual bool is_easy_to_negative() const {return true;}
-	virtual bool is_negative() const {return true;}
-
-	virtual data_exp_type<T> to_negative() const {return Q<T>::clone();}
-	virtual data_exp_type<T> final_optimize() const {return Q<T>::final_optimize()->to_negative();}
-
-	virtual T operator()(const std::function<T(const std::string&)>& cb) const {return -Q<T>::operator()(cb);}
-
-private:
-	virtual T safe_execute(const std::function<T(const std::string&)>& cb) const {return -Q<T>::safe_execute(cb);}
-};
-
 template <typename T> class question_exp : public data_exp<T>
 {
-	friend class negative_question_exp<T, question_exp>;
-
 public:
 	question_exp(judge_exp_ctype<T>& _jexp, data_exp_ctype<T>& _dexp_l, data_exp_ctype<T>& _dexp_r) :
 		jexp(_jexp), dexp_l(_dexp_l), dexp_r(_dexp_r) {}
 
+	virtual bool is_composite() const {return true;}
+	virtual bool is_selector() const {return true;}
 	virtual int get_depth() const {return 1 + std::max(jexp->get_depth(), std::max(dexp_l->get_depth(), dexp_r->get_depth()));}
 	virtual void show_immediate_value() const
 		{jexp->show_immediate_value(); dexp_l->show_immediate_value(); dexp_r->show_immediate_value();}
+	virtual data_exp_ctype<T>& get_left_item() const {return dexp_l;}
+	virtual data_exp_ctype<T>& get_right_item() const {return dexp_r;}
 
-	virtual data_exp_type<T> to_negative() const {return std::make_shared<negative_question_exp<T, question_exp>>(jexp, dexp_l, dexp_r);}
+	virtual data_exp_type<T> to_negative() const {return std::make_shared<negative_data_exp<T>>(clone());}
 	virtual data_exp_type<T> final_optimize() const
 	{
 		jexp->final_optimize();
@@ -1288,11 +1297,9 @@ protected:
 	data_exp_type<T> clone() const {return std::make_shared<question_exp<T>>(jexp, dexp_l, dexp_r);}
 
 private:
-	//for question_exp, recursion still happens here if this question_exp is a sub expression
-	virtual T safe_execute(const std::function<T(const std::string&)>& cb) const
-		{return qme::safe_execute(jexp, cb) ? qme::safe_execute(dexp_l, cb) : qme::safe_execute(dexp_r, cb);}
-	//for question_exp, recursion still happens here if this question_exp is a sub expression
-	virtual void safe_delete() const {qme::safe_delete(jexp); qme::safe_delete(dexp_l); qme::safe_delete(dexp_r);}
+	virtual bool select_branch(data_exp_type<T>& dexp, const std::function<T(const std::string&)>& cb) const
+		{dexp = qme::safe_execute(jexp, cb) ? dexp_l : dexp_r; return true;}
+	virtual void clear() {safe_delete(jexp); dexp_l.reset(); dexp_r.reset();}
 
 private:
 	judge_exp_type<T> jexp;
@@ -1301,15 +1308,13 @@ private:
 
 template <typename T> class simple_question_exp : public data_exp<T>
 {
-	friend class negative_question_exp<T, simple_question_exp>;
-
 public:
 	simple_question_exp(judge_exp_ctype<T>& _jexp) : jexp(_jexp) {}
 
 	virtual int get_depth() const {return 1 + jexp->get_depth();}
 	virtual void show_immediate_value() const {jexp->show_immediate_value();}
 
-	virtual data_exp_type<T> to_negative() const {return std::make_shared<negative_question_exp<T, simple_question_exp>>(jexp);}
+	virtual data_exp_type<T> to_negative() const {return std::make_shared<negative_data_exp<T>>(clone());}
 	virtual data_exp_type<T> final_optimize() const
 	{
 		jexp->final_optimize();
@@ -1322,10 +1327,9 @@ protected:
 	data_exp_type<T> clone() const {return std::make_shared<simple_question_exp<T>>(jexp);}
 
 private:
-	//for simple_question_exp, recursion still happens here if this simple_question_exp is a sub expression
-	virtual T safe_execute(const std::function<T(const std::string&)>& cb) const {return (T) qme::safe_execute(jexp, cb);}
-	//for simple_question_exp, recursion still happens here if this simple_question_exp is a sub expression
-	virtual void safe_delete() const {qme::safe_delete(jexp);}
+	virtual bool select_branch(data_exp_type<T>& dexp, const std::function<T(const std::string&)>& cb) const
+		{dexp = std::make_shared<immediate_data_exp<T>>((T) qme::safe_execute(jexp, cb)); return true;}
+	virtual void clear() {safe_delete(jexp);}
 
 private:
 	judge_exp_type<T> jexp;
