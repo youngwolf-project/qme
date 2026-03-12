@@ -1320,11 +1320,11 @@ template <typename T> inline int safe_delete(exp_ctype<T>& exp)
 		}
 		else if (1 == direction) //left
 		{
-			TRAVEL_EXP(get_road_map, 1);
+			TRAVEL_EXP(get_left_item, 1);
 		}
 		else if (2 == direction) //right
 		{
-			TRAVEL_EXP(get_road_map, 2);
+			TRAVEL_EXP(get_right_item, 2);
 		}
 		else //3 == direction, backtrace
 		{
