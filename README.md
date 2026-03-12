@@ -6,9 +6,9 @@ Overview
 Compile once and execute any times with different values of the variables in the question mark expression.</br>
 Recursion is used during the whole compilation and execution, so please carefully control the number of variables in your question mark expressions, and enlage the size of the stack if inevitable, or use</br>
 qme::O0/qme::O1 to compile it,</br>
-qme::safe_execute to execute it and</br>
+qme::safe_data/qme::safe_judge to execute it and</br>
 qme::safe_delete to delete it,</br>
-then no recursion will be introduced (except question mark expression used as sub expression).
+then no recursion will be introduced.
 
 Quick start
 -
@@ -30,7 +30,7 @@ dm_1["b"] = 1.f;
 dm_1["c"] = 11.f;
 auto cb_1 = [&](const std::string& variable_name) {return cb(dm_1, variable_name);};
 
-auto exp = qme::compiler<>::compile<>("a > 0 ? b > 0 ? b : 100 : c + 1");
+auto exp = qme::compiler<>::compile("a > 0 ? b > 0 ? b : 100 : c + 1");
 if (exp)
 {
 	puts("perform the question mark expression:");
