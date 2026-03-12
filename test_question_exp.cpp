@@ -27,18 +27,18 @@ template <typename T = float> struct ut_input_and_expectation
 	T exp_1, exp_2;
 };
 
-template<typename T> void execute_qme(cpu_timer& timer, qme::data_exp_ctype<T>& exp,
+template<typename T> void execute_qme(cpu_timer& timer, qme::exp_ctype<T>& exp,
 	const std::function<T(const std::string&)>& cb, T exp_re, int& exec_succ, int& match)
 {
 	timer.restart();
-	auto re = (*exp)(cb);
+	auto re = (*exp)(cb); //to calculate 'exp' as a judgement, use 'exp->judge(cb)'.
 	//since recursion is used during the whole compilation and execution, if your expression is too complicated to
 	// be compiled and executed (stack overflow), use
 	// qme::O0/qme::O1 to compile it,
-	// qme::safe_execute to execute it and
+	// qme::safe_data/qme::safe_judge to execute it and
 	// qme::safe_delete to delete it,
-	// then recursion will be suppressed (but not totally, see comments of safe_execute/safe_delete for more details).
-	//auto re = qme::safe_execute(exp, cb);
+	// then recursion will be eliminated.
+	//auto re = qme::safe_data(exp, cb).first;
 	printf("spent %f seconds.\n", timer.elapsed());
 	++exec_succ;
 	if (re == exp_re)
@@ -282,18 +282,7 @@ int main(int argc, const char* argv[])
 		//typedef qme::O2 O; //for float (4 ~ 8 bytes), any optimization level is OK
 		typedef qme::O3 O; //for float (4 ~ 8 bytes), the default and suggested optimization level is 3
 #endif
-		auto exp = qme::compiler<D, O>::compile<qme::data_exp>(inputs[i].input); //compile as a data expression
-		/*
-		auto judge = qme::compiler<D, O>::compile<qme::judge_exp>(inputs[i].input); //compile as a judgement expression
-		auto raw_exp = qme::compiler<D, O>::compile(inputs[i].input); //if you don't know the type of the expression
-		if (raw_exp)
-		{
-			if (raw_exp->is_data())
-				std::dynamic_pointer_cast<qme::data_exp<D>>(raw_exp);
-			else //if (raw_exp->is_judge());
-				std::dynamic_pointer_cast<qme::judge_exp<D>>(raw_exp);
-		}
-		*/
+		auto exp = qme::compiler<D, O>::compile(inputs[i].input);
 		printf("spent %f seconds.\n", timer.elapsed());
 		if (exp)
 		{
@@ -314,9 +303,9 @@ int main(int argc, const char* argv[])
 			//since recursion is used during the whole compilation and execution, if your expression is too complicated to
 			// be compiled and executed (stack overflow), use
 			// qme::O0/qme::O1 to compile it,
-			// qme::safe_execute to execute it and
+			// qme::safe_data/qme::safe_judge to execute it and
 			// qme::safe_delete to delete it,
-			// then recursion will be suppressed (but not totally, see comments of safe_execute/safe_delete for more details).
+			// then recursion will be eliminated.
 			//qme::safe_delete(exp);
 		}
 		putchar('\n');

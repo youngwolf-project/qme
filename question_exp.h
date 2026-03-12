@@ -20,10 +20,10 @@
 namespace qme
 {
 
-//without any exchange between any data, nor merging of immediate values
+//without any exchange between any data, nor merging of immediate values.
 class O0 {public: static int level() {return 0;}};
 
-//without any exchange between any data, but merge adjacent immediate values
+//without any exchange between any data, but merge adjacent immediate values.
 class O1 {public: static int level() {return 1;}};
 
 //don't exchange the data order for divide operations, nor transform them to multiply operations, for example:
@@ -79,81 +79,83 @@ template<typename O> inline bool is_same_operator_level(char op_1, char op_2)
 }
 /////////////////////////////////////////////////////////////////////////////////////////
 
-class exp;
-using exp_type = std::shared_ptr<exp>;
-using exp_ctype = const exp_type;
-class exp
+template <typename T> class exp;
+template <typename T> using exp_type = std::shared_ptr<exp<T>>;
+template <typename T> using exp_ctype = const exp_type<T>;
+template <typename T> class negative_data_exp;
+template <typename T> class not_judge_exp;
+template <typename T> class exp
 {
 protected:
 	virtual ~exp() {}
 
 public:
-	//for optimization level O0/O1, composite exp (expect reverser) should not be reversed, otherwise, recursion happens.
-	static bool is_composite(exp_ctype& e) {return e->is_composite() && !e->is_reverser();}
-
-public:
 	virtual bool is_data() const {return false;}
-	virtual bool is_judge() const {return false;}
-	virtual bool is_composite() const {return false;}
-	virtual bool is_reverser() const {return false;} //for safe_execute and safe_delete only, reverser is a dummy composite exp with left operand only.
+	virtual bool is_composite() const {return false;} //used for O::level() < 2 to avoid recursion, operator, left item and right item must be valid
+	virtual bool is_reverser() const {return false;} //true to false, value to -value, and vice versa, just left item is valid
+	virtual bool need_to_bool() const {return false;} //value to bool (via (bool) (0 != value)), just left item is valid
 	virtual int get_depth() const {return 1;}
 	virtual void show_immediate_value() const {}
-};
 
-/////////////////////////////////////////////////////////////////////////////////////////
-template <typename T> class data_exp;
-template <typename T> using data_exp_type = std::shared_ptr<data_exp<T>>;
-template <typename T> using data_exp_ctype = const data_exp_type<T>;
-template <typename T> inline T safe_execute(data_exp_ctype<T>&, const std::function<T(const std::string&)>&);
-template <typename T> inline void safe_delete(data_exp_ctype<T>&);
-template <typename T> class data_exp : public exp
-{
-public:
-	//for optimization level O0/O1, composite exp (expect reverser and selector) should not be reversed, otherwise, recursion happens.
-	static bool is_composite(data_exp_ctype<T>& dexp) {return exp::is_composite(dexp) && !dexp->is_selector();}
+	virtual exp_type<T> clone() const = 0;
+	virtual const std::string& get_operator() const {throw("unsupported get operator operation");} // * / + - > >= < <= == != && ||
+	virtual exp_type<T> get_road_map() const {return exp_type<T>();}
+	virtual exp_type<T> get_left_item() const {return exp_type<T>();}
+	virtual exp_type<T> get_right_item() const {return exp_type<T>();}
 
-public:
-	virtual bool is_data() const {return true;}
-	using exp::is_composite;
-	virtual bool is_selector() const {return false;} //for safe_delete only, selector is a dummy composite exp.
+	inline T operator()(const std::function<T(const std::string&)>& cb) const {return data(cb);}
+	virtual T data(const std::function<T(const std::string&)>&) const = 0;
+	virtual bool judge(const std::function<T(const std::string&)>&) const = 0;
+	virtual exp_type<T> to_negative() const {return std::make_shared<negative_data_exp<T>>(clone());}
+	virtual exp_type<T> bang() const {return std::make_shared<not_judge_exp<T>>(clone());}
+
+	virtual void clear() {}
+	virtual exp_type<T> final_optimize() const {return exp_type<T>();}
+
+	//for data expression only
+	/////////////////////////////////////////////////////////////////////////////////////////
 	virtual bool is_immediate() const {return false;}
 	virtual bool is_composite_variable() const {return false;}
 	//whether this expression can be transformed to negative without introducing negation operations, for example '2 * a' to '-2 * a' or
-	//with reducing existed negation operations, for example '-a to a'
+	//with reducing existed negation operations, for example '-a to a'.
 	virtual bool is_easy_to_negative() const {return false;}
 	virtual bool is_negative() const {return false;} //needs negation operation at runtime
-
 	virtual T get_immediate_value() const {throw("unsupported get immediate value operation!");} //valid if is_immediate()
 	virtual int get_exponent() const {throw("unsupported get exponent operation!");} //valid if is_composite_variable()
 	virtual T get_multiplier() const {throw("unsupported get multiplier operation!");} //valid if is_composite_variable()
 	virtual const std::string& get_variable_name() const {throw("unsupported get variable name operation!");} //valid if is_composite_variable()
-	virtual char get_operator() const {throw("unsupported get operator operation!");} //valid if data_exp<T>::is_composite(this)
-	virtual data_exp_ctype<T>& get_left_item() const {throw("unsupported get left item operation!");} //valid if this->is_composite()
-	virtual data_exp_ctype<T>& get_right_item() const {throw("unsupported get right item operation!");} //valid if this->is_composite() && !is_reverser()
 
-	virtual bool merge_with(char, data_exp_ctype<T>&) {return false;}
-	virtual bool merge_with(data_exp_ctype<T>&, char) {return false;}
-	virtual data_exp_type<T> trim_myself() {return data_exp_type<T>();}
-	virtual data_exp_type<T> to_negative() const = 0;
-	virtual data_exp_type<T> final_optimize() const {return data_exp_type<T>();}
-
-	virtual T operator()(const std::function<T(const std::string&)>&) const = 0;
-
-private:
-	friend T safe_execute<T>(data_exp_ctype<T>&, const std::function<T(const std::string&)>&);
-	//for question_exp only (used in safe_execute)
-	virtual bool select_branch(data_exp_type<T>&, const std::function<T(const std::string&)>&) const {return false;}
-
-	friend void safe_delete<T>(data_exp_ctype<T>&);
-	virtual void clear() {}
+	virtual bool merge_with(char, exp_ctype<T>&) {return false;}
+	virtual bool merge_with(exp_ctype<T>&, char) {return false;}
+	virtual exp_type<T> trim_myself() {return exp_type<T>();}
+	/////////////////////////////////////////////////////////////////////////////////////////
+	//for data expression only
 };
-/////////////////////////////////////////////////////////////////////////////////////////
+
+template <typename T> class data_exp;
+template <typename T> using data_exp_type = std::shared_ptr<data_exp<T>>;
+template <typename T> using data_exp_ctype = const data_exp_type<T>;
+template <typename T> class data_exp : public exp<T>
+{
+public:
+	virtual bool is_data() const {return true;}
+	virtual bool judge(const std::function<T(const std::string&)>& cb) const {return 0 != this->operator()(cb);}
+};
+
+template <typename T> class judge_exp;
+template <typename T> using judge_exp_type = std::shared_ptr<judge_exp<T>>;
+template <typename T> using judge_exp_ctype = const judge_exp_type<T>;
+template <typename T> class judge_exp : public exp<T>
+{
+public:
+	virtual T data(const std::function<T(const std::string&)>& cb) const {return (T) this->judge(cb);}
+};
 
 /////////////////////////////////////////////////////////////////////////////////////////
-template <typename T> inline bool is_same_composite_variable(const std::string& variable_name, data_exp_ctype<T>& other_exp)
+template <typename T> inline bool is_same_composite_variable(const std::string& variable_name, exp_ctype<T>& other_exp)
 	{return other_exp->is_composite_variable() && variable_name == other_exp->get_variable_name();}
 
-template <typename T> inline bool is_same_composite_variable(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r)
+template <typename T> inline bool is_same_composite_variable(exp_ctype<T>& dexp_l, exp_ctype<T>& dexp_r)
 	{return dexp_l->is_composite_variable() && is_same_composite_variable(dexp_l->get_variable_name(), dexp_r);}
 
 template <typename T> inline bool is_divisible(T dividend, T divisor)
@@ -163,6 +165,37 @@ template <typename T> inline bool is_divisible(T dividend, T divisor)
 	return 0 == dividend || 1 == divisor || -1 == divisor || dividend == divisor || -dividend == divisor;
 }
 
+template <typename T> class negative_data_exp : public data_exp<T>
+{
+public:
+	negative_data_exp(exp_ctype<T>& exp) : exp_l(exp) {}
+
+	virtual bool is_reverser() const {return true;}
+	virtual int get_depth() const {return 1 + exp_l->get_depth();}
+	virtual void show_immediate_value() const {exp_l->show_immediate_value();}
+	virtual exp_type<T> clone() const {throw("unsupported clone operation!");}
+	virtual exp_type<T> get_left_item() const {return exp_l;}
+
+	virtual T data(const std::function<T(const std::string&)>& cb) const {return -(*exp_l)(cb);}
+	virtual bool judge(const std::function<T(const std::string&)>& cb) const {return exp_l->judge(cb);} //equals to 0 != data(cb), but more effective
+	virtual exp_type<T> to_negative() const {return exp_l;}
+	virtual exp_type<T> bang() const //'!(-!a)' equals to '!(!a)' equals to 'a ?', '!(-a) ?' equals to '!a', '!(-(a > 0)) ?' equals to '!(a > 0)'
+		{return exp_l->is_reverser() && !exp_l->is_data() ? exp_l->bang() : std::make_shared<not_judge_exp<T>>(exp_l); }
+
+	virtual void clear() {exp_l.reset();}
+	virtual exp_type<T> final_optimize()
+	{
+		auto l = exp_l->final_optimize();
+		return l ? std::make_shared<negative_data_exp<T>>(l) : exp_type<T>();
+	}
+
+	virtual bool is_easy_to_negative() const {return true;}
+	virtual bool is_negative() const {return true;}
+
+private:
+	exp_type<T> exp_l;
+};
+
 template <typename T> class immediate_data_exp : public data_exp<T>
 {
 public:
@@ -170,27 +203,31 @@ public:
 	immediate_data_exp(T v) : value(v) {}
 
 	virtual void show_immediate_value() const {std::cout << ' ' << value;}
-	virtual bool is_immediate() const {return true;}
-	virtual bool is_easy_to_negative() const {return true;}
-	virtual T get_immediate_value() const {return value;}
-
-	virtual bool merge_with(char other_op, data_exp_ctype<T>& other_exp)
-		{return other_exp->is_immediate() ? merge(other_op, other_exp->get_immediate_value()) : false;}
-	virtual data_exp_type<T> to_negative() const {return std::make_shared<immediate_data_exp<T>>(-value);}
-
-	virtual T operator()(const std::function<T(const std::string&)>&) const
+	exp_type<T> clone() const {return std::make_shared<immediate_data_exp<T>>(value);}
+	virtual T data(const std::function<T(const std::string&)>&) const
 	{
 #ifdef DEBUG
 		std::cout << " get immediate value " << value << std::endl;
 #endif
 		return value;
 	}
+	virtual exp_type<T> to_negative() const {return std::make_shared<immediate_data_exp<T>>(-value);} //more effective than exp<T>::to_negative()
+
+	virtual bool is_immediate() const {return true;}
+	virtual bool is_easy_to_negative() const {return true;}
+	virtual T get_immediate_value() const {return value;}
+
+	virtual bool merge_with(char other_op, exp_ctype<T>& other_exp)
+		{return other_exp->is_immediate() ? (calculate(other_op, other_exp->get_immediate_value()), true) : false;}
 
 	operator T() const {return value;}
+	bool to_not() {return (bool) (value = (T) (0 == value));}
+	bool to_bool() {return (bool) (value = (T) (0 != value));}
 	T negate() {return value = -value;}
-	bool merge(char other_op, T v)
+
+	T calculate(char op, T v)
 	{
-		switch (other_op)
+		switch (op)
 		{
 		case '+':
 			value += v;
@@ -207,11 +244,31 @@ public:
 			value /= v;
 			break;
 		default:
-			throw("undefined operator " + std::string(1, other_op));
+			throw("undefined operator " + std::string(1, op));
 			break;
 		}
 
-		return true;
+		return value;
+	}
+
+	bool compare(const std::string& c, T v)
+	{
+		if (">" == c)
+			value = (T) (value > v);
+		else if (">=" == c)
+			value = (T) (value >= v);
+		else if ("<" == c)
+			value = (T) (value < v);
+		else if ("<=" == c)
+			value = (T) (value <= v);
+		else if ("==" == c)
+			value = (T) (value == v);
+		else if ("!=" == c)
+			value = (T) (value != v);
+		else
+			throw("unknown compare operator " + c);
+
+		return (bool) value;
 	}
 
 private:
@@ -219,18 +276,79 @@ private:
 };
 
 template <typename T, typename O> class composite_variable_data_exp;
-template <typename T, typename O> inline data_exp_type<T> merge_data_exp(data_exp_ctype<T>&, data_exp_ctype<T>&, char);
+template <typename T, typename O> inline exp_type<T> merge_data_exp(exp_ctype<T>&, exp_ctype<T>&, char);
+template <typename T, typename O> inline exp_type<T> make_binary_data_exp(exp_ctype<T>&, exp_ctype<T>&, char);
 template <typename T, typename O> class binary_data_exp : public data_exp<T>
 {
 protected:
-	binary_data_exp(data_exp_ctype<T>& _dexp_l, data_exp_ctype<T>& _dexp_r, char _op) : op(_op), dexp_l(_dexp_l), dexp_r(_dexp_r) {}
+	binary_data_exp(exp_ctype<T>& _exp_l, exp_ctype<T>& _exp_r, char _op) : op(1, _op), exp_l(_exp_l), exp_r(_exp_r) {}
 
 public:
 	virtual bool is_composite() const {return true;}
-	virtual int get_depth() const {return 1 + std::max(dexp_l->get_depth(), dexp_r->get_depth());}
-	virtual void show_immediate_value() const {dexp_l->show_immediate_value(); dexp_r->show_immediate_value();}
+	virtual int get_depth() const {return 1 + std::max(exp_l->get_depth(), exp_r->get_depth());}
+	virtual void show_immediate_value() const {exp_l->show_immediate_value(); exp_r->show_immediate_value();}
+	virtual exp_type<T> clone() const {return make_binary_data_exp<T, O>(exp_l, exp_r, op.front());}
+	virtual const std::string& get_operator() const {return op;}
+	virtual exp_type<T> get_left_item() const {return exp_l;}
+	virtual exp_type<T> get_right_item() const {return exp_r;}
+
+	virtual exp_type<T> to_negative() const
+	{
+		auto op = this->op.front();
+		switch (op)
+		{
+		case '+':
+			if (exp_l->is_easy_to_negative())
+				return merge_data_exp<T, O>(exp_l->to_negative(), exp_r, '-');
+			else if (exp_r->is_easy_to_negative())
+				return merge_data_exp<T, O>(exp_r->to_negative(), exp_l, '-');
+			else
+			{
+				auto depth_l = exp_l->get_depth(), depth_r = exp_r->get_depth();
+				if (depth_l <= depth_r)
+					return merge_data_exp<T, O>(exp_l->to_negative(), exp_r, '-');
+				else
+					return merge_data_exp<T, O>(exp_r->to_negative(), exp_l, '-');
+			}
+			break;
+		case '-':
+			//without this branch, '-a - b' will be transformed to 'b + a' (from b - -a) instead of 'a + b', the former looks strange.
+			if (exp_l->is_negative())
+				return merge_data_exp<T, O>(exp_l->to_negative(), exp_r, '+');
+			return merge_data_exp<T, O>(exp_r, exp_l, '-');
+			break;
+		case '*':
+		case '/':
+			if (exp_l->is_easy_to_negative())
+				return merge_data_exp<T, O>(exp_l->to_negative(), exp_r, op);
+			else if (exp_r->is_easy_to_negative())
+				return merge_data_exp<T, O>(exp_l, exp_r->to_negative(), op);
+			else
+			{
+				auto depth_l = exp_l->get_depth(), depth_r = exp_r->get_depth();
+				if (depth_l <= depth_r)
+					return merge_data_exp<T, O>(exp_l->to_negative(), exp_r, op);
+				else
+					return merge_data_exp<T, O>(exp_l, exp_r->to_negative(), op);
+			}
+			break;
+		}
+
+		return exp_type<T>();
+	}
+
+	virtual void clear() {exp_l.reset(); exp_r.reset();}
+	virtual exp_type<T> final_optimize() const
+	{
+		auto l = exp_l->final_optimize();
+		auto r = exp_r->final_optimize();
+
+		return (l || r) ? merge_data_exp<T, O>(l ? l : exp_l, r ? r : exp_r, op.front()) : exp_type<T>();
+	}
+
+
 	virtual bool is_easy_to_negative() const
-		{return is_negative() || (is_operator_2(op) && (dexp_l->is_easy_to_negative() || dexp_r->is_easy_to_negative()));}
+		{return is_negative() || (is_operator_2(op) && (exp_l->is_easy_to_negative() || exp_r->is_easy_to_negative()));}
 	virtual bool is_negative() const
 	{
 		//'-a - b', '-a * b', 'a * -b', '-a / b' and 'a / -b' are considered to be negative,
@@ -247,141 +365,141 @@ public:
 		// '-a / -b'	will be transformed to 'a / b'
 		// '-a / C '	will be transformed to 'a / -C'
 		// 'C / -b '	will be transformed to '-C / b'
+		auto op = this->op.front();
 		switch (op)
 		{
 		case '-':
-			return dexp_l->is_negative();
+			return exp_l->is_negative();
 			break;
 		case '*':
 		case '/':
-			return dexp_l->is_negative() || dexp_r->is_negative();
+			return exp_l->is_negative() || exp_r->is_negative();
 			break;
 		}
 
 		return false;
 	}
-	virtual char get_operator() const {return op;}
-	virtual data_exp_ctype<T>& get_left_item() const {return dexp_l;}
-	virtual data_exp_ctype<T>& get_right_item() const {return dexp_r;}
 
-	virtual bool merge_with(char other_op, data_exp_ctype<T>& other_exp)
+	virtual bool merge_with(char other_op, exp_ctype<T>& other_exp)
 	{
+		auto op = this->op.front();
 		if (is_same_operator_level<O>(op, other_op))
 		{
 			if (O::level() < 2)
 			{
 				if (!other_exp->is_immediate())
 					return false;
-				else if (dexp_l->is_immediate())
-					return dexp_l->merge_with(other_op, other_exp);
-				else if (!dexp_r->is_immediate())
+				else if (exp_l->is_immediate())
+					return exp_l->merge_with(other_op, other_exp);
+				else if (!exp_r->is_immediate())
 					return false;
 
 				if ('-' == op)
 					other_op = '+' == other_op ? '-' : '+';
 				else if ('/' == op) //other_op must also be '/'
 					other_op = '*';
-				return dexp_r->merge_with(other_op, other_exp);
+				return exp_r->merge_with(other_op, other_exp);
 			}
-			else if (dexp_l->merge_with(other_op, other_exp))
+			else if (exp_l->merge_with(other_op, other_exp))
 				return true;
 			else if ('+' == op || '*' == op)
-				return dexp_r->merge_with(other_op, other_exp);
+				return exp_r->merge_with(other_op, other_exp);
 			else if ('-' == op)
 				other_op = '+' == other_op ? '-' : '+';
 			else if ('/' == op)
 				other_op = '*' == other_op ? '/' : '*';
-			return dexp_r->merge_with(other_op, other_exp);
+			return exp_r->merge_with(other_op, other_exp);
 		}
 		else if (2 == O::level() && '+' == other_op && '/' == op && //'N1*a^M / C + N2*a^M' -> '(N1 + N2*C)*a^M / C'
-			dexp_r->is_immediate() && is_same_composite_variable(dexp_l, other_exp) &&
-			dexp_l->get_exponent() == other_exp->get_exponent())
+			exp_r->is_immediate() && is_same_composite_variable(exp_l, other_exp) &&
+			exp_l->get_exponent() == other_exp->get_exponent())
 		{
-			dexp_l = std::make_shared<composite_variable_data_exp<T, O>>(dexp_l->get_variable_name(),
-				dexp_l->get_multiplier() + other_exp->get_multiplier() * dexp_r->get_immediate_value(), dexp_l->get_exponent());
+			exp_l = std::make_shared<composite_variable_data_exp<T, O>>(exp_l->get_variable_name(),
+				exp_l->get_multiplier() + other_exp->get_multiplier() * exp_r->get_immediate_value(), exp_l->get_exponent());
 			return true;
 		}
 
 		return false;
 	}
 
-	virtual data_exp_type<T> trim_myself()
+	virtual exp_type<T> trim_myself()
 	{
-		auto data = dexp_l->trim_myself();
+		auto data = exp_l->trim_myself();
 		if (data)
-			dexp_l = data;
+			exp_l = data;
 
-		data = dexp_r->trim_myself();
+		data = exp_r->trim_myself();
 		if (data)
-			dexp_r = data;
+			exp_r = data;
 
+		auto op = this->op.front();
 		switch (op)
 		{
 		case '+':
-			if (dexp_l->is_immediate() && 0 == dexp_l->get_immediate_value())
-				return dexp_r;
-			else if (dexp_r->is_immediate() && 0 == dexp_r->get_immediate_value())
-				return dexp_l;
-			else if (dexp_r->is_negative())
-				return merge_data_exp<T, O>(dexp_l, dexp_r->to_negative(), '-');
-			else if (dexp_l->is_negative())
-				return merge_data_exp<T, O>(dexp_r, dexp_l->to_negative(), '-');
+			if (exp_l->is_immediate() && 0 == exp_l->get_immediate_value())
+				return exp_r;
+			else if (exp_r->is_immediate() && 0 == exp_r->get_immediate_value())
+				return exp_l;
+			else if (exp_r->is_negative())
+				return merge_data_exp<T, O>(exp_l, exp_r->to_negative(), '-');
+			else if (exp_l->is_negative())
+				return merge_data_exp<T, O>(exp_r, exp_l->to_negative(), '-');
 			break;
 		case '-':
-			if (dexp_l->is_immediate() && 0 == dexp_l->get_immediate_value())
-				return dexp_r->to_negative();
-			else if (dexp_r->is_immediate() && 0 == dexp_r->get_immediate_value())
-				return dexp_l;
-			else if (dexp_r->is_negative())
-				return merge_data_exp<T, O>(dexp_l, dexp_r->to_negative(), '+');
-			else if (dexp_l->is_negative() && dexp_r->is_easy_to_negative())
-				return merge_data_exp<T, O>(dexp_r->to_negative(), dexp_l->to_negative(), '-');
+			if (exp_l->is_immediate() && 0 == exp_l->get_immediate_value())
+				return exp_r->to_negative();
+			else if (exp_r->is_immediate() && 0 == exp_r->get_immediate_value())
+				return exp_l;
+			else if (exp_r->is_negative())
+				return merge_data_exp<T, O>(exp_l, exp_r->to_negative(), '+');
+			else if (exp_l->is_negative() && exp_r->is_easy_to_negative())
+				return merge_data_exp<T, O>(exp_r->to_negative(), exp_l->to_negative(), '-');
 			break;
 		case '*':
-			if (dexp_l->is_immediate())
+			if (exp_l->is_immediate())
 			{
-				auto v = dexp_l->get_immediate_value();
+				auto v = exp_l->get_immediate_value();
 				if (1 == v)
-					return dexp_r;
+					return exp_r;
 				else if (0 == v)
-					return dexp_l;
+					return exp_l;
 				else if (-1 == v)
-					return dexp_r->to_negative();
+					return exp_r->to_negative();
 			}
-			else if (dexp_r->is_immediate())
+			else if (exp_r->is_immediate())
 			{
-				auto v = dexp_r->get_immediate_value();
+				auto v = exp_r->get_immediate_value();
 				if (1 == v)
-					return dexp_l;
+					return exp_l;
 				else if (0 == v)
-					return dexp_r;
+					return exp_r;
 				else if (-1 == v)
-					return dexp_l->to_negative();
+					return exp_l->to_negative();
 			}
-			if ((dexp_l->is_negative() && (dexp_r->is_negative() || dexp_r->is_easy_to_negative())) ||
-				(dexp_r->is_negative() && (dexp_l->is_negative() || dexp_l->is_easy_to_negative())))
-				return merge_data_exp<T, O>(dexp_l->to_negative(), dexp_r->to_negative(), '*');
+			if ((exp_l->is_negative() && (exp_r->is_negative() || exp_r->is_easy_to_negative())) ||
+				(exp_r->is_negative() && (exp_l->is_negative() || exp_l->is_easy_to_negative())))
+				return merge_data_exp<T, O>(exp_l->to_negative(), exp_r->to_negative(), '*');
 			break;
 		case '/':
-			if (dexp_l->is_immediate())
+			if (exp_l->is_immediate())
 			{
-				if (0 == dexp_l->get_immediate_value())
-					return dexp_l;
+				if (0 == exp_l->get_immediate_value())
+					return exp_l;
 			}
-			else if (dexp_r->is_immediate())
+			else if (exp_r->is_immediate())
 			{
-				auto v = dexp_r->get_immediate_value();
+				auto v = exp_r->get_immediate_value();
 				if (1 == v)
-					return dexp_l;
+					return exp_l;
 				else if (0 == v)
 					throw("divide zero");
 				else if (-1 == v)
-					return dexp_l->to_negative();
+					return exp_l->to_negative();
 			}
-			if ((dexp_l->is_negative() && (dexp_r->is_negative() || dexp_r->is_easy_to_negative())) ||
-				(dexp_r->is_negative() && (dexp_l->is_negative() || dexp_l->is_easy_to_negative())))
-				return merge_data_exp<T, O>(dexp_l->to_negative(), dexp_r->to_negative(), '/');
-			else if (2 == O::level() && is_same_composite_variable(dexp_l, dexp_r))
+			if ((exp_l->is_negative() && (exp_r->is_negative() || exp_r->is_easy_to_negative())) ||
+				(exp_r->is_negative() && (exp_l->is_negative() || exp_l->is_easy_to_negative())))
+				return merge_data_exp<T, O>(exp_l->to_negative(), exp_r->to_negative(), '/');
+			else if (2 == O::level() && is_same_composite_variable(exp_l, exp_r))
 			{
 				//'N1*a^M1 / N2*a^M2' -> 'N1*a^(M1-M2) / N2' where M1 > M2 > 0
 				//for other conditions, we will handle them in composite_variable_data_exp's:
@@ -389,151 +507,72 @@ public:
 				// trim_myself, or
 				// final_optimize, or
 				// cannot handle them with optimization level < 3
-				auto exponent_l = dexp_l->get_exponent(), exponent_r = dexp_r->get_exponent();
+				auto exponent_l = exp_l->get_exponent(), exponent_r = exp_r->get_exponent();
 				if (exponent_l > exponent_r && exponent_r > 0)
 				{
-					dexp_l = std::make_shared<composite_variable_data_exp<T, O>>(dexp_l->get_variable_name(),
-						dexp_l->get_multiplier(), exponent_l - exponent_r);
-					dexp_r = std::make_shared<immediate_data_exp<T>>(dexp_r->get_multiplier());
+					exp_l = std::make_shared<composite_variable_data_exp<T, O>>(exp_l->get_variable_name(),
+						exp_l->get_multiplier(), exponent_l - exponent_r);
+					exp_r = std::make_shared<immediate_data_exp<T>>(exp_r->get_multiplier());
 					return trim_myself();
 				}
 			}
 			break;
 		}
 
-		return data_exp_type<T>();
-	}
-
-	virtual data_exp_type<T> to_negative() const
-	{
-		switch (op)
-		{
-		case '+':
-			if (dexp_l->is_easy_to_negative())
-				return merge_data_exp<T, O>(dexp_l->to_negative(), dexp_r, '-');
-			else if (dexp_r->is_easy_to_negative())
-				return merge_data_exp<T, O>(dexp_r->to_negative(), dexp_l, '-');
-			else
-			{
-				auto depth_l = dexp_l->get_depth(), depth_r = dexp_r->get_depth();
-				if (depth_l <= depth_r)
-					return merge_data_exp<T, O>(dexp_l->to_negative(), dexp_r, '-');
-				else
-					return merge_data_exp<T, O>(dexp_r->to_negative(), dexp_l, '-');
-			}
-			break;
-		case '-':
-			//without this branch, '-a - b' will be transformed to 'b + a' (from b - -a) instead of 'a + b', the former looks strange
-			if (dexp_l->is_negative())
-				return merge_data_exp<T, O>(dexp_l->to_negative(), dexp_r, '+');
-			return merge_data_exp<T, O>(dexp_r, dexp_l, '-');
-			break;
-		case '*':
-		case '/':
-			if (dexp_l->is_easy_to_negative())
-				return merge_data_exp<T, O>(dexp_l->to_negative(), dexp_r, op);
-			else if (dexp_r->is_easy_to_negative())
-				return merge_data_exp<T, O>(dexp_l, dexp_r->to_negative(), op);
-			else
-			{
-				auto depth_l = dexp_l->get_depth(), depth_r = dexp_r->get_depth();
-				if (depth_l <= depth_r)
-					return merge_data_exp<T, O>(dexp_l->to_negative(), dexp_r, op);
-				else
-					return merge_data_exp<T, O>(dexp_l, dexp_r->to_negative(), op);
-			}
-			break;
-		}
-
-		return data_exp_type<T>();
-	}
-
-	virtual data_exp_type<T> final_optimize() const
-	{
-		auto l = dexp_l->final_optimize();
-		auto r = dexp_r->final_optimize();
-
-		return (l || r) ? merge_data_exp<T, O>(l ? l : dexp_l, r ? r : dexp_r, op) : data_exp_type<T>();
+		return exp_type<T>();
 	}
 
 private:
-	virtual void clear() {dexp_l.reset(); dexp_r.reset();}
-
-private:
-	char op;
-	data_exp_type<T> dexp_l, dexp_r;
+	std::string op;
+	exp_type<T> exp_l, exp_r;
 };
 
 template <typename T, typename O> class add_data_exp : public binary_data_exp<T, O>
 {
 public:
-	add_data_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) : binary_data_exp<T, O>(dexp_l, dexp_r, '+') {}
+	add_data_exp(exp_ctype<T>& exp_l, exp_ctype<T>& exp_r) : binary_data_exp<T, O>(exp_l, exp_r, '+') {}
 
-	virtual T operator()(const std::function<T(const std::string&)>& cb) const
-		{return (*binary_data_exp<T, O>::get_left_item())(cb) + (*binary_data_exp<T, O>::get_right_item())(cb);}
+	virtual T data(const std::function<T(const std::string&)>& cb) const
+		{return (*this->get_left_item())(cb) + (*this->get_right_item())(cb);}
 };
 
 template <typename T, typename O> class sub_data_exp : public binary_data_exp<T, O>
 {
 public:
-	sub_data_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) : binary_data_exp<T, O>(dexp_l, dexp_r, '-') {}
+	sub_data_exp(exp_ctype<T>& exp_l, exp_ctype<T>& exp_r) : binary_data_exp<T, O>(exp_l, exp_r, '-') {}
 
-	virtual T operator()(const std::function<T(const std::string&)>& cb) const
-		{return (*binary_data_exp<T, O>::get_left_item())(cb) - (*binary_data_exp<T, O>::get_right_item())(cb);}
+	virtual T data(const std::function<T(const std::string&)>& cb) const
+		{return (*this->get_left_item())(cb) - (*this->get_right_item())(cb);}
 };
 
 template <typename T, typename O> class multi_data_exp : public binary_data_exp<T, O>
 {
 public:
-	multi_data_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) : binary_data_exp<T, O>(dexp_l, dexp_r, '*') {}
+	multi_data_exp(exp_ctype<T>& exp_l, exp_ctype<T>& exp_r) : binary_data_exp<T, O>(exp_l, exp_r, '*') {}
 
-	virtual T operator()(const std::function<T(const std::string&)>& cb) const
-		{return (*binary_data_exp<T, O>::get_left_item())(cb) * (*binary_data_exp<T, O>::get_right_item())(cb);}
+	virtual T data(const std::function<T(const std::string&)>& cb) const
+		{return (*this->get_left_item())(cb) * (*this->get_right_item())(cb);}
 };
 
 template <typename T, typename O> class div_data_exp : public binary_data_exp<T, O>
 {
 public:
-	div_data_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r) : binary_data_exp<T, O>(dexp_l, dexp_r, '/') {}
+	div_data_exp(exp_ctype<T>& exp_l, exp_ctype<T>& exp_r) : binary_data_exp<T, O>(exp_l, exp_r, '/') {}
 
-	virtual T operator()(const std::function<T(const std::string&)>& cb) const
+	virtual T data(const std::function<T(const std::string&)>& cb) const
 	{
 #ifndef _MSC_VER //keep the order of data fetching for debuging
-		auto dividend = (*binary_data_exp<T, O>::get_left_item())(cb);
+		auto dividend = (*this->get_left_item())(cb);
 #endif
-		auto divisor = (*binary_data_exp<T, O>::get_right_item())(cb);
+		auto divisor = (*this->get_right_item())(cb);
 		if (0 == divisor)
 			throw("divide zero");
 #ifdef _MSC_VER
-		return (*binary_data_exp<T, O>::get_left_item())(cb) / divisor;
+		return (*this->get_left_item())(cb) / divisor;
 #else
 		return dividend / divisor;
 #endif
 	}
-};
-
-template <typename T> class negative_data_exp : public data_exp<T>
-{
-public:
-	negative_data_exp(data_exp_ctype<T>& _dexp_l) : dexp_l(_dexp_l) {}
-
-	//dexp_l has no chance to be a negative_data_exp too, otherwise, recursion happens, see compiler::to_negative.
-	virtual bool is_composite() const {return true;}
-	virtual bool is_reverser() const {return true;}
-	virtual int get_depth() const {return 1 + dexp_l->get_depth();}
-	virtual void show_immediate_value() const {dexp_l->show_immediate_value();}
-	virtual bool is_easy_to_negative() const {return true;}
-	virtual bool is_negative() const {return true;}
-	virtual data_exp_ctype<T>& get_left_item() const {return dexp_l;}
-
-	virtual data_exp_type<T> to_negative() const {return dexp_l;}
-	virtual T operator()(const std::function<T(const std::string&)>& cb) const {return -(*dexp_l)(cb);}
-
-private:
-	virtual void clear() {dexp_l.reset();}
-
-private:
-	data_exp_type<T> dexp_l;
 };
 
 template <typename T> class variable_data_exp : public data_exp<T>
@@ -541,9 +580,8 @@ template <typename T> class variable_data_exp : public data_exp<T>
 public:
 	variable_data_exp(const std::string& _variable_name) : variable_name(_variable_name) {}
 
-	virtual data_exp_type<T> to_negative() const {return std::make_shared<negative_data_exp<T>>(clone());}
-
-	virtual T operator()(const std::function<T(const std::string&)>& cb) const
+	exp_type<T> clone() const {return std::make_shared<variable_data_exp<T>>(variable_name);}
+	virtual T data(const std::function<T(const std::string&)>& cb) const
 	{
 #ifdef DEBUG
 		auto v = cb(variable_name);
@@ -552,9 +590,6 @@ public:
 #endif
 		return cb(variable_name);
 	}
-
-protected:
-	data_exp_type<T> clone() const {return std::make_shared<variable_data_exp<T>>(variable_name);}
 
 private:
 	std::string variable_name;
@@ -566,10 +601,8 @@ public:
 	exponent_data_exp(const std::string& _variable_name, int _exponent) : variable_name(_variable_name), exponent(_exponent) {}
 
 	virtual void show_immediate_value() const {std::cout << ' ' << exponent;}
-
-	virtual data_exp_type<T> to_negative() const {return std::make_shared<negative_data_exp<T>>(clone());}
-
-	virtual T operator()(const std::function<T(const std::string&)>& cb) const
+	exp_type<T> clone() const {return std::make_shared<exponent_data_exp<T>>(variable_name, exponent);}
+	virtual T data(const std::function<T(const std::string&)>& cb) const
 	{
 #ifdef DEBUG
 		auto v = cb(variable_name);
@@ -578,9 +611,6 @@ public:
 #endif
 		return (T) pow(cb(variable_name), exponent);
 	}
-
-protected:
-	data_exp_type<T> clone() const {return std::make_shared<exponent_data_exp<T>>(variable_name, exponent);}
 
 private:
 	std::string variable_name;
@@ -594,13 +624,51 @@ public:
 		: variable_name(_variable_name), multiplier(_multiplier), exponent(_exponent) {}
 
 	virtual void show_immediate_value() const {std::cout << ' ' << multiplier << ' ' << exponent;}
+	virtual exp_type<T> clone() const {return std::make_shared<composite_variable_data_exp<T, O>>(variable_name, multiplier, exponent);}
+	virtual T data(const std::function<T(const std::string&)>& cb) const
+	{
+#ifdef DEBUG
+		auto v = cb(variable_name);
+		std::cout << " get " << variable_name << " returns " << v << std::endl;
+		return multiplier * (T) pow(v, exponent);
+#endif
+		return multiplier * (T) pow(cb(variable_name), exponent);
+	}
+	virtual exp_type<T> to_negative() const
+		{return std::make_shared<composite_variable_data_exp<T, O>>(variable_name, -multiplier, exponent);} //more effective than exp<T>::to_negative()
+
+	virtual exp_type<T> final_optimize() const
+	{
+		exp_type<T> data = std::make_shared<immediate_data_exp<T>>(multiplier);
+		if (0 == multiplier || 0 == exponent)
+			return data;
+		else if (1 != multiplier && -1 != multiplier && exponent > 1)
+			return exp_type<T>();
+		else if (1 == multiplier && exponent < 0)
+			return std::make_shared<exponent_data_exp<T>>(variable_name, exponent);
+		else if (-1 == multiplier && exponent < 0)
+			return std::make_shared<negative_data_exp<T>>(std::make_shared<exponent_data_exp<T>>(variable_name, exponent));
+		else if (-1 == exponent)
+			return std::make_shared<div_data_exp<T, O>>(data, std::make_shared<variable_data_exp<T>>(variable_name));
+		else if (exponent < -1)
+			return std::make_shared<div_data_exp<T, O>>(data, std::make_shared<exponent_data_exp<T>>(variable_name, -exponent));
+
+		if (1 == exponent)
+			data = std::make_shared<multi_data_exp<T, O>>(data, std::make_shared<variable_data_exp<T>>(variable_name));
+		else // > 1
+			data = std::make_shared<multi_data_exp<T, O>>(data, std::make_shared<exponent_data_exp<T>>(variable_name, exponent));
+
+		auto re = data->trim_myself();
+		return re ? re : data;
+	}
+
 	virtual bool is_composite_variable() const {return true;}
 	virtual bool is_easy_to_negative() const {return true;}
 	virtual int get_exponent() const {return exponent;}
 	virtual T get_multiplier() const {return multiplier;}
 	virtual const std::string& get_variable_name() const {return variable_name;}
 
-	virtual bool merge_with(char other_op, data_exp_ctype<T>& other_exp)
+	virtual bool merge_with(char other_op, exp_ctype<T>& other_exp)
 	{
 		if (other_exp->is_immediate())
 		{
@@ -658,8 +726,8 @@ public:
 		return true;
 	}
 
-	//handle 'C * Na^M' and 'C / Na^M' only
-	virtual bool merge_with(data_exp_ctype<T>& other_exp, char other_op)
+	//handle 'C * Na^M' and 'C / Na^M' only.
+	virtual bool merge_with(exp_ctype<T>& other_exp, char other_op)
 	{
 		if (!other_exp->is_immediate())
 			return false;
@@ -678,49 +746,11 @@ public:
 		return false;
 	}
 
-	virtual data_exp_type<T> trim_myself()
+	virtual exp_type<T> trim_myself()
 	{
 		if (0 == multiplier || 0 == exponent)
 			return std::make_shared<immediate_data_exp<T>>(multiplier);
-		return data_exp_type<T>();
-	}
-
-	virtual data_exp_type<T> to_negative() const
-		{return std::make_shared<composite_variable_data_exp<T, O>>(variable_name, -multiplier, exponent);}
-
-	virtual data_exp_type<T> final_optimize() const
-	{
-		data_exp_type<T> data = std::make_shared<immediate_data_exp<T>>(multiplier);
-		if (0 == multiplier || 0 == exponent)
-			return data;
-		else if (1 != multiplier && -1 != multiplier && exponent > 1)
-			return data_exp_type<T>();
-		else if (1 == multiplier && exponent < 0)
-			return std::make_shared<exponent_data_exp<T>>(variable_name, exponent);
-		else if (-1 == multiplier && exponent < 0)
-			return std::make_shared<negative_data_exp<T>>(std::make_shared<exponent_data_exp<T>>(variable_name, exponent));
-		else if (-1 == exponent)
-			return std::make_shared<div_data_exp<T, O>>(data, std::make_shared<variable_data_exp<T>>(variable_name));
-		else if (exponent < -1)
-			return std::make_shared<div_data_exp<T, O>>(data, std::make_shared<exponent_data_exp<T>>(variable_name, -exponent));
-
-		if (1 == exponent)
-			data = std::make_shared<multi_data_exp<T, O>>(data, std::make_shared<variable_data_exp<T>>(variable_name));
-		else // > 1
-			data = std::make_shared<multi_data_exp<T, O>>(data, std::make_shared<exponent_data_exp<T>>(variable_name, exponent));
-
-		auto re = data->trim_myself();
-		return re ? re : data;
-	}
-
-	virtual T operator()(const std::function<T(const std::string&)>& cb) const
-	{
-#ifdef DEBUG
-		auto v = cb(variable_name);
-		std::cout << " get " << variable_name << " returns " << v << std::endl;
-		return multiplier * (T) pow(v, exponent);
-#endif
-		return multiplier * (T) pow(cb(variable_name), exponent);
+		return exp_type<T>();
 	}
 
 private:
@@ -730,21 +760,21 @@ private:
 };
 
 template <typename T, typename O>
-inline data_exp_type<T> make_binary_data_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r, char op)
+inline exp_type<T> make_binary_data_exp(exp_ctype<T>& exp_l, exp_ctype<T>& exp_r, char op)
 {
 	switch (op)
 	{
 	case '+':
-		return std::make_shared<add_data_exp<T, O>>(dexp_l, dexp_r);
+		return std::make_shared<add_data_exp<T, O>>(exp_l, exp_r);
 		break;
 	case '-':
-		return std::make_shared<sub_data_exp<T, O>>(dexp_l, dexp_r);
+		return std::make_shared<sub_data_exp<T, O>>(exp_l, exp_r);
 		break;
 	case '*':
-		return std::make_shared<multi_data_exp<T, O>>(dexp_l, dexp_r);
+		return std::make_shared<multi_data_exp<T, O>>(exp_l, exp_r);
 		break;
 	case '/':
-		return std::make_shared<div_data_exp<T, O>>(dexp_l, dexp_r);
+		return std::make_shared<div_data_exp<T, O>>(exp_l, exp_r);
 		break;
 	default:
 		throw("undefined operator " + std::string(1, op));
@@ -752,31 +782,31 @@ inline data_exp_type<T> make_binary_data_exp(data_exp_ctype<T>& dexp_l, data_exp
 	}
 }
 
-template <typename T, typename O> inline data_exp_type<T> merge_data_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r, char op)
+template <typename T, typename O> inline exp_type<T> merge_data_exp(exp_ctype<T>& exp_l, exp_ctype<T>& exp_r, char op)
 {
 	if (0 == O::level())
-		return make_binary_data_exp<T, O>(dexp_l, dexp_r, op);
-	else if (dexp_r->merge_with(dexp_l, op)) //parse 'C * Na^M' and 'C / Na^M' to composite_variable_data_exp instead of binary_data_exp
+		return make_binary_data_exp<T, O>(exp_l, exp_r, op);
+	else if (exp_r->merge_with(exp_l, op)) //parse 'C * Na^M' and 'C / Na^M' to composite_variable_data_exp instead of binary_data_exp
 	{
-		auto data = dexp_r->trim_myself();
-		return data ? data : dexp_r;
+		auto data = exp_r->trim_myself();
+		return data ? data : exp_r;
 	}
-	else if (dexp_l->merge_with(op, dexp_r)) //composite_variable_data_exp is involved here
+	else if (exp_l->merge_with(op, exp_r)) //composite_variable_data_exp is involved here
 	{
-		auto data = dexp_l->trim_myself();
-		return data ? data : dexp_l;
+		auto data = exp_l->trim_myself();
+		return data ? data : exp_l;
 	}
-	else if (data_exp<T>::is_composite(dexp_r))
+	else if (exp_r->is_composite())
 	{
-		auto op_2 = dexp_r->get_operator();
+		auto op_2 = exp_r->get_operator().front();
 		if (is_same_operator_level<O>(op, op_2))
 		{
-			data_exp_type<T> data;
-			if (dexp_l->merge_with(op, dexp_r->get_left_item()))
+			exp_type<T> data;
+			if (exp_l->merge_with(op, exp_r->get_left_item()))
 			{
-				data = dexp_l->trim_myself();
+				data = exp_l->trim_myself();
 				if (!data)
-					data = dexp_l;
+					data = exp_l;
 			}
 
 			if ('-' == op)
@@ -785,487 +815,261 @@ template <typename T, typename O> inline data_exp_type<T> merge_data_exp(data_ex
 				op_2 = '/' == op_2 ? '*' : '/';
 			if (!data)
 			{
-				if (dexp_l->merge_with(op_2, dexp_r->get_right_item()))
+				if (exp_l->merge_with(op_2, exp_r->get_right_item()))
 				{
-					data = dexp_l->trim_myself();
+					data = exp_l->trim_myself();
 					if (!data)
-						data = dexp_l;
+						data = exp_l;
 
-					return merge_data_exp<T, O>(data, dexp_r->get_left_item(), op);
+					return merge_data_exp<T, O>(data, exp_r->get_left_item(), op);
 				}
 				else
-					data = merge_data_exp<T, O>(dexp_l, dexp_r->get_left_item(), op);
+					data = merge_data_exp<T, O>(exp_l, exp_r->get_left_item(), op);
 			}
 
-			return merge_data_exp<T, O>(data, dexp_r->get_right_item(), op_2);
+			return merge_data_exp<T, O>(data, exp_r->get_right_item(), op_2);
 		}
 		else if (2 == O::level() && '+' == op && '/' == op_2 && //'N1*a^M + N2*a^M / C' -> '(N1*C + N2)*a^M / C'
-			dexp_r->get_right_item()->is_immediate() && is_same_composite_variable(dexp_l, dexp_r->get_left_item()) &&
-			dexp_l->get_exponent() == dexp_r->get_left_item()->get_exponent())
+			exp_r->get_right_item()->is_immediate() && is_same_composite_variable(exp_l, exp_r->get_left_item()) &&
+			exp_l->get_exponent() == exp_r->get_left_item()->get_exponent())
 		{
-			auto multiplier = dexp_l->get_multiplier() * dexp_r->get_right_item()->get_immediate_value() +
-				dexp_r->get_left_item()->get_multiplier();
+			auto multiplier = exp_l->get_multiplier() * exp_r->get_right_item()->get_immediate_value() +
+				exp_r->get_left_item()->get_multiplier();
 			return merge_data_exp<T, O>(
-				std::make_shared<composite_variable_data_exp<T, O>>(dexp_l->get_variable_name(), multiplier, dexp_l->get_exponent()),
-				dexp_r->get_right_item(), '/');
+				std::make_shared<composite_variable_data_exp<T, O>>(exp_l->get_variable_name(), multiplier, exp_l->get_exponent()),
+				exp_r->get_right_item(), '/');
 		}
 	}
 
-	auto data = make_binary_data_exp<T, O>(dexp_l, dexp_r, op);
+	auto data = make_binary_data_exp<T, O>(exp_l, exp_r, op);
 	auto re = data->trim_myself();
 	return re ? re : data;
 }
 template <typename T, typename O>
-inline data_exp_type<T> merge_data_exp(data_exp_ctype<T>& dexp_l, data_exp_ctype<T>& dexp_r, const std::string& op)
-	{return merge_data_exp<T, O>(dexp_l, dexp_r, *op.data());}
-
-//since recursion is used during the whole compilation and execution, if your expression is too complicated to
-// be compiled and executed (stack overflow), use
-// qme::O0/qme::O1 to compile it,
-// qme::safe_execute to execute it and
-// qme::safe_delete to delete it,
-//then recursion will be suppressed, currently, recursion in data expression has been eliminated, but still exists in judge expression
-//if it has question expression as its data expressions (for example, '(a > 0 ? b : c) > 0 ? 1 : 2', the first '>' judgment will be
-//performed within the second '>' judgment, recursion happens), please note.
-//
-//with optimization level qme::O0/qme::O1, following functions are still available, if you're encountering above situation,
-//you should not call them manually, please note:
-// is_easy_to_negative
-// is_negative
-// get_depth
-// show_immediate_value
-// merge_with
-// trim_myself
-// to_negative
-// final_optimize
-//return the depth of this expression (not like the get_depth interface, recursion is not applied during the calculation),
-//to get the max depth, the short_circuit_controller must always returns false if the right item is valid, please note.
-template <typename T> inline int travel_exp(const T& exp,
-	const std::function<void(const T&)>& left_handler,
-	const std::function<bool(const T&)>& short_circuit_controller, //false - continue, true - backtrack
-	const std::function<void(const T&)>& right_handler,
-	const std::function<void(const T&)>& backtrack_handler,
-	const std::function<void(T&)>& branch_selector = [](T&) {})
-{
-	auto trimmed_exp = exp;
-	branch_selector(trimmed_exp);
-
-	if (!trimmed_exp->is_composite())
-		return left_handler(trimmed_exp), 1;
-
-	auto depth = 1, max_depth = 0;
-	std::list<std::pair<T, bool>> exps; //true - left branch, false - right branch
-	exps.emplace_back(std::move(trimmed_exp), true);
-	auto direction = 0; //0 - left-bottom, 1 - right-bottom, 2 - top-left
-	for (auto iter = exps.rbegin(); iter != exps.rend();)
-		if (0 == direction)
-		{
-			auto left = iter->first->get_left_item();
-			branch_selector(left); //do not ++depth even if the branch_selector replaced the 'left' expression,
-								   //because we don't know if this happened in following backtrack_handler
-			if (left->is_composite())
-			{
-				++depth;
-				exps.emplace_back(left, true);
-				iter = exps.rbegin();
-			}
-			else
-			{
-				left_handler(left);
-				direction = 1;
-				max_depth = std::max(depth + 1, max_depth);
-			}
-		}
-		else if (1 == direction)
-		{
-			if (short_circuit_controller(iter->first))
-				direction = 2;
-			else
-			{
-				auto right = iter->first->get_right_item();
-				branch_selector(right); //do not ++depth even if the branch_selector replaced the 'right' expression,
-										//because we don't know if this happened in following backtrack_handler
-				if (right->is_composite())
-				{
-					++depth;
-					exps.emplace_back(right, false);
-					iter = exps.rbegin();
-					direction = 0;
-				}
-				else
-				{
-					right_handler(right);
-					direction = 2;
-					max_depth = std::max(depth + 1, max_depth);
-				}
-			}
-		}
-		else //2 == direction
-		{
-			--depth;
-			backtrack_handler(iter->first);
-			if (iter++->second)
-			{
-				iter = decltype(iter)(exps.erase(iter.base(), std::end(exps)));
-				direction = 1;
-			}
-		}
-
-	assert(0 == depth && max_depth > 1);
-	return max_depth;
-}
-
-template <typename T> inline T safe_execute(data_exp_ctype<T>& dexp, const std::function<T(const std::string&)>& cb)
-{
-	std::list<immediate_data_exp<T>> res;
-	travel_exp<data_exp_type<T>>(dexp,
-		[&](data_exp_ctype<T>& left) {res.emplace_back((*left)(cb));},
-		[](data_exp_ctype<T>& parent) {return parent->is_reverser();},
-		[&](data_exp_ctype<T>& right) {res.emplace_back((*right)(cb));},
-		[&](data_exp_ctype<T>& parent) {
-			if (parent->is_reverser())
-				res.back().negate();
-			else
-			{
-				T re = res.back();
-				res.pop_back();
-				res.back().merge(parent->get_operator(), re); //this runtime merging will impact performance, but we have no choice
-			}
-		},
-		[&](data_exp_type<T>& parent) {while (parent->select_branch(parent, cb));}
-	);
-
-	assert(1 == res.size());
-	return res.front();
-}
-
-template <typename T> inline void safe_delete(data_exp_ctype<T>& dexp)
-{
-	travel_exp<data_exp_type<T>>(dexp,
-		[](data_exp_ctype<T>& left) {},
-		[](data_exp_ctype<T>& parent) {return parent->is_reverser();},
-		[](data_exp_ctype<T>& right) {},
-		[](data_exp_ctype<T>& parent) {parent->clear();}
-	);
-}
+inline exp_type<T> merge_data_exp(exp_ctype<T>& exp_l, exp_ctype<T>& exp_r, const std::string& op)
+	{return merge_data_exp<T, O>(exp_l, exp_r, *op.data());}
 /////////////////////////////////////////////////////////////////////////////////////////
 
 /////////////////////////////////////////////////////////////////////////////////////////
-template <typename T> class judge_exp;
-template <typename T> using judge_exp_type = std::shared_ptr<judge_exp<T>>;
-template <typename T> using judge_exp_ctype = const judge_exp_type<T>;
-template <typename T> inline bool safe_execute(judge_exp_ctype<T>&, const std::function<T(const std::string&)>&);
-template <typename T> inline void safe_delete(judge_exp_ctype<T>&);
-template <typename T> class judge_exp : public exp
+template <typename T> class transparent_judge_exp : public judge_exp<T>
 {
 public:
-	virtual bool is_judge() const {return true;}
-	virtual const std::string& get_operator() const {throw("unsupported get operator operation!");} //valid if exp::is_composite(this)
-	virtual judge_exp_ctype<T>& get_left_item() const {throw("unsupported get left item operation!");} //valid if this->is_composite()
-	virtual judge_exp_ctype<T>& get_right_item() const {throw("unsupported get right item operation!");} //valid if this->is_composite() && !is_reverser()
+	transparent_judge_exp(exp_ctype<T>& _exp_l) : exp_l(_exp_l) {}
 
-	virtual judge_exp_type<T> bang() const = 0;
-	virtual void final_optimize() = 0;
+	virtual bool need_to_bool() const {return true;}
+	virtual int get_depth() const {return 1 + exp_l->get_depth();}
+	virtual void show_immediate_value() const {exp_l->show_immediate_value();}
+	virtual exp_type<T> clone() const {return std::make_shared<transparent_judge_exp<T>>(exp_l);}
+	virtual exp_type<T> get_left_item() const {return exp_l;}
 
-	virtual bool operator()(const std::function<T(const std::string&)>&) const = 0;
+	virtual bool judge(const std::function<T(const std::string&)>& cb) const {return exp_l->judge(cb);}
+	virtual exp_type<T> bang() const {return std::make_shared<not_judge_exp<T>>(exp_l);}
 
-private:
-	friend bool safe_execute<T>(judge_exp_ctype<T>&, const std::function<T(const std::string&)>&);
-	//is recursion fully eliminated or not depends on the data_exp(s) this judge_exp holds
-	virtual bool safe_execute(const std::function<T(const std::string&)>&) const = 0;
-
-	friend void safe_delete<T>(judge_exp_ctype<T>&);
-	virtual void safe_delete() const {}
-	virtual void clear() {}
-};
-
-template <typename T> inline bool safe_execute(judge_exp_ctype<T>& jexp, const std::function<T(const std::string&)>& cb)
-{
-	auto re = false;
-	travel_exp<judge_exp_type<T>>(jexp,
-		[&](judge_exp_ctype<T>& left) {re = left->safe_execute(cb);},
-		//this runtime judgement will impact performance, but we have no choice, return false - continue, true - backtrack
-		[&](judge_exp_ctype<T>& parent) {return parent->is_reverser() ? (re = !re, true) : ("&&" == parent->get_operator() ? !re : re);},
-		[&](judge_exp_ctype<T>& right) {re = right->safe_execute(cb);},
-		[](judge_exp_ctype<T>&) {}
-	);
-
-	return re;
-}
-
-template <typename T> inline void safe_delete(judge_exp_ctype<T>& jexp)
-{
-	travel_exp<judge_exp_type<T>>(jexp,
-		[](judge_exp_ctype<T>& left) {left->safe_delete();},
-		[](judge_exp_ctype<T>& parent) {return parent->is_reverser();},
-		[](judge_exp_ctype<T>& right) {right->safe_delete();},
-		[](judge_exp_ctype<T>& parent) {parent->clear();}
-	);
-}
-
-template <typename T> class unitary_judge_exp : public judge_exp<T>
-{
-public:
-	unitary_judge_exp(data_exp_ctype<T>& _dexp) : dexp(_dexp) {}
-
-public:
-	virtual int get_depth() const {return 1 + dexp->get_depth();}
-	virtual void show_immediate_value() const {dexp->show_immediate_value();}
-	virtual void final_optimize()
+	virtual void clear() {exp_l.reset();}
+	virtual exp_type<T> final_optimize() const
 	{
-		auto data = dexp->final_optimize();
-		if (data)
-			dexp = data;
+		auto l = exp_l->final_optimize();
+		return l ? std::make_shared<transparent_judge_exp<T>>(l) : exp_type<T>();
 	}
 
 private:
-	virtual void safe_delete() const {qme::safe_delete(dexp);}
-
-protected:
-	data_exp_type<T> dexp;
+	exp_type<T> exp_l;
 };
 
-template <typename T> class not_equal_0_judge_exp;
-template <typename T> class equal_0_judge_exp : public unitary_judge_exp<T> //intentional optimization for !a ? b : c, for a > 0 .etc, use binary_judge_exp
+template <typename T> class not_judge_exp : public judge_exp<T>
 {
 public:
-	using unitary_judge_exp<T>::unitary_judge_exp;
+	not_judge_exp(exp_ctype<T>& _exp_l) : exp_l(_exp_l) {}
 
-	virtual judge_exp_type<T> bang() const {return std::make_shared<not_equal_0_judge_exp<T>>(this->dexp);}
+	virtual bool is_reverser() const {return true;}
+	virtual int get_depth() const {return 1 + exp_l->get_depth();}
+	virtual void show_immediate_value() const {exp_l->show_immediate_value();}
+	virtual exp_type<T> clone() const {return std::make_shared<not_judge_exp<T>>(exp_l);}
+	virtual exp_type<T> get_left_item() const {return exp_l;}
 
-	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return 0 == (*this->dexp)(cb);}
+	virtual bool judge(const std::function<T(const std::string&)>& cb) const {return !exp_l->judge(cb);}
+	virtual exp_type<T> bang() const {return exp_l->is_data() ? std::make_shared<transparent_judge_exp<T>>(exp_l) : exp_l;}
+
+	virtual void clear() {exp_l.reset();}
+	virtual exp_type<T> final_optimize() const
+	{
+		auto l = exp_l->final_optimize();
+		return l ? std::make_shared<not_judge_exp<T>>(l) : exp_type<T>();
+	}
 
 private:
-	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const {return 0 == qme::safe_execute(this->dexp, cb);}
+	exp_type<T> exp_l;
 };
 
-template <typename T> class not_equal_0_judge_exp : public unitary_judge_exp<T> //intentional optimization for a ? b : c, for a < 0 .etc, use binary_judge_exp
-{
-public:
-	using unitary_judge_exp<T>::unitary_judge_exp;
-
-	virtual judge_exp_type<T> bang() const {return std::make_shared<equal_0_judge_exp<T>>(this->dexp);}
-
-	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return 0 != (*this->dexp)(cb);}
-
-private:
-	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const {return 0 != qme::safe_execute(this->dexp, cb);}
-};
-
+template <typename T> inline exp_type<T> make_binary_judge_exp(exp_ctype<T>&, exp_ctype<T>&, const std::string&);
 template <typename T> class binary_judge_exp : public judge_exp<T>
 {
 public:
-	binary_judge_exp(data_exp_ctype<T>& _dexp_l, data_exp_ctype<T>& _dexp_r) : dexp_l(_dexp_l), dexp_r(_dexp_r) {}
+	binary_judge_exp(exp_ctype<T>& _exp_l, exp_ctype<T>& _exp_r, const std::string& _c) : c(_c), exp_l(_exp_l), exp_r(_exp_r) {}
 
 public:
-	virtual int get_depth() const {return 1 + std::max(dexp_l->get_depth(), dexp_r->get_depth());}
-	virtual void show_immediate_value() const {dexp_l->show_immediate_value(); dexp_r->show_immediate_value();}
-	virtual void final_optimize()
-	{
-		auto data = dexp_l->final_optimize();
-		if (data)
-			dexp_l = data;
+	virtual int get_depth() const {return 1 + std::max(exp_l->get_depth(), exp_r->get_depth());}
+	virtual void show_immediate_value() const {exp_l->show_immediate_value(); exp_r->show_immediate_value();}
+	virtual exp_type<T> clone() const {return make_binary_judge_exp<T>(exp_l, exp_r, c);}
+	virtual const std::string& get_operator() const {return c;}
+	virtual exp_type<T> get_left_item() const {return exp_l;}
+	virtual exp_type<T> get_right_item() const {return exp_r;}
+	virtual void clear() {exp_l.reset(); exp_r.reset();}
 
-		data = dexp_r->final_optimize();
-		if (data)
-			dexp_r = data;
+	virtual exp_type<T> final_optimize() const
+	{
+		auto l = exp_l->final_optimize();
+		auto r = exp_r->final_optimize();
+
+		return (l || r) ? make_binary_judge_exp<T>(l ? l : exp_l, r ? r : exp_r, c) : exp_type<T>();
 	}
 
 private:
-	virtual void safe_delete() const {qme::safe_delete(dexp_l); qme::safe_delete(dexp_r);}
-
-protected:
-	data_exp_type<T> dexp_l, dexp_r;
+	std::string c;
+	exp_type<T> exp_l, exp_r;
 };
 
 template <typename T> class smaller_equal_judge_exp;
 template <typename T> class bigger_judge_exp : public binary_judge_exp<T>
 {
 public:
-	using binary_judge_exp<T>::binary_judge_exp;
+	bigger_judge_exp(exp_ctype<T>& exp_l, exp_ctype<T>& exp_r) : binary_judge_exp<T>(exp_l, exp_r, ">") {}
 
-	virtual judge_exp_type<T> bang() const {return std::make_shared<smaller_equal_judge_exp<T>>(this->dexp_l, this->dexp_r);}
+	virtual bool judge(const std::function<T(const std::string&)>& cb) const {return (*this->get_left_item())(cb) > (*this->get_right_item())(cb);}
 
-	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) > (*this->dexp_r)(cb);}
-
-private:
-	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const
-		{return qme::safe_execute(this->dexp_l, cb) > qme::safe_execute(this->dexp_r, cb);}
+	virtual exp_type<T> bang() const {return std::make_shared<smaller_equal_judge_exp<T>>(this->get_left_item(), this->get_right_item());}
 };
 
 template <typename T> class smaller_judge_exp;
 template <typename T> class bigger_equal_judge_exp : public binary_judge_exp<T>
 {
 public:
-	using binary_judge_exp<T>::binary_judge_exp;
+	bigger_equal_judge_exp(exp_ctype<T>& exp_l, exp_ctype<T>& exp_r) : binary_judge_exp<T>(exp_l, exp_r, ">=") {}
 
-	virtual judge_exp_type<T> bang() const {return std::make_shared<smaller_judge_exp<T>>(this->dexp_l, this->dexp_r);}
+	virtual bool judge(const std::function<T(const std::string&)>& cb) const {return (*this->get_left_item())(cb) >= (*this->get_right_item())(cb);}
 
-	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) >= (*this->dexp_r)(cb);}
-
-private:
-	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const
-		{return qme::safe_execute(this->dexp_l, cb) >= qme::safe_execute(this->dexp_r, cb);}
+	virtual exp_type<T> bang() const {return std::make_shared<smaller_judge_exp<T>>(this->get_left_item(), this->get_right_item());}
 };
 
 template <typename T> class smaller_judge_exp : public binary_judge_exp<T>
 {
 public:
-	using binary_judge_exp<T>::binary_judge_exp;
+	smaller_judge_exp(exp_ctype<T>& exp_l, exp_ctype<T>& exp_r) : binary_judge_exp<T>(exp_l, exp_r, "<") {}
 
-	virtual judge_exp_type<T> bang() const {return std::make_shared<bigger_equal_judge_exp<T>>(this->dexp_l, this->dexp_r);}
+	virtual bool judge(const std::function<T(const std::string&)>& cb) const {return (*this->get_left_item())(cb) < (*this->get_right_item())(cb);}
 
-	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) < (*this->dexp_r)(cb);}
-
-private:
-	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const
-		{return qme::safe_execute(this->dexp_l, cb) < qme::safe_execute(this->dexp_r, cb);}
+	virtual exp_type<T> bang() const {return std::make_shared<bigger_equal_judge_exp<T>>(this->get_left_item(), this->get_right_item());}
 };
 
 template <typename T> class smaller_equal_judge_exp : public binary_judge_exp<T>
 {
 public:
-	using binary_judge_exp<T>::binary_judge_exp;
+	smaller_equal_judge_exp(exp_ctype<T>& exp_l, exp_ctype<T>& exp_r) : binary_judge_exp<T>(exp_l, exp_r, "<=") {}
 
-	virtual judge_exp_type<T> bang() const {return std::make_shared<bigger_judge_exp<T>>(this->dexp_l, this->dexp_r);}
+	virtual bool judge(const std::function<T(const std::string&)>& cb) const {return (*this->get_left_item())(cb) <= (*this->get_right_item())(cb);}
 
-	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) <= (*this->dexp_r)(cb);}
-
-private:
-	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const
-		{return qme::safe_execute(this->dexp_l, cb) <= qme::safe_execute(this->dexp_r, cb);}
+	virtual exp_type<T> bang() const {return std::make_shared<bigger_judge_exp<T>>(this->get_left_item(), this->get_right_item());}
 };
 
 template <typename T> class not_equal_judge_exp;
 template <typename T> class equal_judge_exp : public binary_judge_exp<T>
 {
 public:
-	using binary_judge_exp<T>::binary_judge_exp;
+	equal_judge_exp(exp_ctype<T>& exp_l, exp_ctype<T>& exp_r) : binary_judge_exp<T>(exp_l, exp_r, "==") {}
 
-	virtual judge_exp_type<T> bang() const {return std::make_shared<not_equal_judge_exp<T>>(this->dexp_l, this->dexp_r);}
+	virtual bool judge(const std::function<T(const std::string&)>& cb) const {return (*this->get_left_item())(cb) == (*this->get_right_item())(cb);}
 
-	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) == (*this->dexp_r)(cb);}
-
-private:
-	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const
-		{return qme::safe_execute(this->dexp_l, cb) == qme::safe_execute(this->dexp_r, cb);}
+	virtual exp_type<T> bang() const {return std::make_shared<not_equal_judge_exp<T>>(this->get_left_item(), this->get_right_item());}
 };
 
 template <typename T> class not_equal_judge_exp : public binary_judge_exp<T>
 {
 public:
-	using binary_judge_exp<T>::binary_judge_exp;
+	not_equal_judge_exp(exp_ctype<T>& exp_l, exp_ctype<T>& exp_r) : binary_judge_exp<T>(exp_l, exp_r, "!=") {}
 
-	virtual judge_exp_type<T> bang() const {return std::make_shared<equal_judge_exp<T>>(this->dexp_l, this->dexp_r);}
+	virtual bool judge(const std::function<T(const std::string&)>& cb) const {return (*this->get_left_item())(cb) != (*this->get_right_item())(cb);}
 
-	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return (*this->dexp_l)(cb) != (*this->dexp_r)(cb);}
-
-private:
-	virtual bool safe_execute(const std::function<T(const std::string&)>& cb) const
-		{return qme::safe_execute(this->dexp_l, cb) != qme::safe_execute(this->dexp_r, cb);}
+	virtual exp_type<T> bang() const {return std::make_shared<equal_judge_exp<T>>(this->get_left_item(), this->get_right_item());}
 };
 
-template <typename T>
-inline judge_exp_type<T> make_binary_judge_exp(data_exp_ctype<T>& dc_1, data_exp_ctype<T>& dc_2, const std::string& c)
+template <typename T> inline exp_type<T> make_binary_judge_exp(exp_ctype<T>& exp_l, exp_ctype<T>& exp_r, const std::string& c)
 {
 	if (">" == c)
-		return std::make_shared<bigger_judge_exp<T>>(dc_1, dc_2);
+		return std::make_shared<bigger_judge_exp<T>>(exp_l, exp_r);
 	else if (">=" == c)
-		return std::make_shared<bigger_equal_judge_exp<T>>(dc_1, dc_2);
+		return std::make_shared<bigger_equal_judge_exp<T>>(exp_l, exp_r);
 	else if ("<" == c)
-		return std::make_shared<smaller_judge_exp<T>>(dc_1, dc_2);
+		return std::make_shared<smaller_judge_exp<T>>(exp_l, exp_r);
 	else if ("<=" == c)
-		return std::make_shared<smaller_equal_judge_exp<T>>(dc_1, dc_2);
+		return std::make_shared<smaller_equal_judge_exp<T>>(exp_l, exp_r);
 	else if ("==" == c)
-		return std::make_shared<equal_judge_exp<T>>(dc_1, dc_2);
+		return std::make_shared<equal_judge_exp<T>>(exp_l, exp_r);
 	else if ("!=" == c)
-		return std::make_shared<not_equal_judge_exp<T>>(dc_1, dc_2);
+		return std::make_shared<not_equal_judge_exp<T>>(exp_l, exp_r);
 	else
 		throw("unknown compare operator " + c);
 }
 
-//for optimization level O0 and O1 only, eliminate recursion for logical NOT operations
-template <typename T> class not_judge_exp : public judge_exp<T>
-{
-public:
-	not_judge_exp(judge_exp_ctype<T>& _jexp_l) : jexp_l(_jexp_l) {}
-
-	virtual bool is_composite() const {return true;}
-	virtual bool is_reverser() const {return true;}
-	virtual int get_depth() const {return 1 + jexp_l->get_depth();}
-	virtual void show_immediate_value() const {jexp_l->show_immediate_value();}
-	virtual judge_exp_ctype<T>& get_left_item() const {return jexp_l;}
-
-	virtual judge_exp_type<T> bang() const {return jexp_l;}
-	virtual void final_optimize() {jexp_l->final_optimize();}
-
-	virtual bool operator()(const std::function<T(const std::string&)>& cb) const {return !(*jexp_l)(cb);}
-
-private:
-	virtual bool safe_execute(const std::function<T(const std::string&)>&) const {throw("unsupported safe execute operation!");}
-	virtual void clear() {jexp_l.reset();}
-
-private:
-	judge_exp_type<T> jexp_l;
-};
-
+template <typename T>inline exp_type<T> make_logical_exp(exp_ctype<T>&, exp_ctype<T>&, const std::string&);
 template <typename T> class logical_exp : public judge_exp<T>
 {
 protected:
-	logical_exp(judge_exp_ctype<T>& _jexp_l, judge_exp_ctype<T>& _jexp_r, const std::string& _lop) :
-		lop(_lop), jexp_l(_jexp_l), jexp_r(_jexp_r) {}
+	logical_exp(exp_ctype<T>& _exp_l, exp_ctype<T>& _exp_r, const std::string& _lop) : lop(_lop), exp_l(_exp_l), exp_r(_exp_r) {}
 
 public:
 	virtual bool is_composite() const {return true;}
-	virtual int get_depth() const {return 1 + std::max(jexp_l->get_depth(), jexp_l->get_depth());}
-	virtual void show_immediate_value() const {jexp_l->show_immediate_value(); jexp_r->show_immediate_value();}
+	virtual int get_depth() const {return 1 + std::max(exp_l->get_depth(), exp_l->get_depth());}
+	virtual void show_immediate_value() const {exp_l->show_immediate_value(); exp_r->show_immediate_value();}
+	virtual exp_type<T> clone() const {return make_logical_exp<T>(exp_l, exp_r, lop);}
 	virtual const std::string& get_operator() const {return lop;}
-	virtual judge_exp_ctype<T>& get_left_item() const {return jexp_l;}
-	virtual judge_exp_ctype<T>& get_right_item() const {return jexp_r;}
+	virtual exp_type<T> get_left_item() const {return exp_l;}
+	virtual exp_type<T> get_right_item() const {return exp_r;}
+	virtual void clear() {exp_l.reset(); exp_r.reset();}
 
-	virtual void final_optimize() {jexp_l->final_optimize(); jexp_r->final_optimize();}
+	virtual exp_type<T> final_optimize() const
+	{
+		auto l = exp_l->final_optimize();
+		auto r = exp_r->final_optimize();
 
-private:
-	virtual bool safe_execute(const std::function<T(const std::string&)>&) const {throw("unsupported safe execute operation!");}
-	virtual void clear() {jexp_l.reset(); jexp_r.reset();}
+		return (l || r) ? make_logical_exp<T>(l ? l : exp_l, r ? r : exp_r, lop) : exp_type<T>();
+	}
 
 private:
 	std::string lop;
-	judge_exp_type<T> jexp_l, jexp_r;
+	exp_type<T> exp_l, exp_r;
 };
 
 template <typename T> class or_judge_exp;
 template <typename T> class and_judge_exp : public logical_exp<T>
 {
 public:
-	and_judge_exp(judge_exp_ctype<T>& jexp_l, judge_exp_ctype<T>& jexp_r) : logical_exp<T>(jexp_l, jexp_r, "&&") {}
+	and_judge_exp(exp_ctype<T>& exp_l, exp_ctype<T>& exp_r) : logical_exp<T>(exp_l, exp_r, "&&") {}
 
-	virtual judge_exp_type<T> bang() const
+	virtual exp_type<T> bang() const
 		{return std::make_shared<or_judge_exp<T>>(this->get_left_item()->bang(), this->get_right_item()->bang());}
 
-	virtual bool operator()(const std::function<T(const std::string&)>& cb) const
-		{return (*this->get_left_item())(cb) && (*this->get_right_item())(cb);}
+	virtual bool judge(const std::function<T(const std::string&)>& cb) const
+		{return this->get_left_item()->judge(cb) && this->get_right_item()->judge(cb);}
 };
 
 template <typename T> class or_judge_exp : public logical_exp<T>
 {
 public:
-	or_judge_exp(judge_exp_ctype<T>& jexp_l, judge_exp_ctype<T>& jexp_r) : logical_exp<T>(jexp_l, jexp_r, "||") {}
+	or_judge_exp(exp_ctype<T>& exp_l, exp_ctype<T>& exp_r) : logical_exp<T>(exp_l, exp_r, "||") {}
 
-	virtual judge_exp_type<T> bang() const
+	virtual exp_type<T> bang() const
 		{return std::make_shared<and_judge_exp<T>>(this->get_left_item()->bang(), this->get_right_item()->bang());}
 
-	virtual bool operator()(const std::function<T(const std::string&)>& cb) const
-		{return (*this->get_left_item())(cb) || (*this->get_right_item())(cb);}
+	virtual bool judge(const std::function<T(const std::string&)>& cb) const
+		{return this->get_left_item()->judge(cb) || this->get_right_item()->judge(cb);}
 };
 
-template <typename T>
-inline judge_exp_type<T> make_logical_exp(judge_exp_ctype<T>& jexp_l, judge_exp_ctype<T>& jexp_r, const std::string& lop)
+template <typename T>inline exp_type<T> make_logical_exp(exp_ctype<T>& exp_l, exp_ctype<T>& exp_r, const std::string& lop)
 {
 	if ("&&" == lop)
-		return std::make_shared<and_judge_exp<T>>(jexp_l, jexp_r);
+		return std::make_shared<and_judge_exp<T>>(exp_l, exp_r);
 	else if ("||" == lop)
-		return std::make_shared<or_judge_exp<T>>(jexp_l, jexp_r);
+		return std::make_shared<or_judge_exp<T>>(exp_l, exp_r);
 	else
 		throw("undefined logical operator " + lop);
 }
@@ -1275,70 +1079,271 @@ inline judge_exp_type<T> make_logical_exp(judge_exp_ctype<T>& jexp_l, judge_exp_
 template <typename T> class question_exp : public data_exp<T>
 {
 public:
-	question_exp(judge_exp_ctype<T>& _jexp, data_exp_ctype<T>& _dexp_l, data_exp_ctype<T>& _dexp_r) :
-		jexp(_jexp), dexp_l(_dexp_l), dexp_r(_dexp_r) {}
+	question_exp(exp_ctype<T>& _exp, exp_ctype<T>& _exp_l, exp_ctype<T>& _exp_r) : exp(_exp), exp_l(_exp_l), exp_r(_exp_r) {}
 
-	virtual bool is_composite() const {return true;}
-	virtual bool is_selector() const {return true;}
-	virtual int get_depth() const {return 1 + std::max(jexp->get_depth(), std::max(dexp_l->get_depth(), dexp_r->get_depth()));}
+	virtual int get_depth() const {return 1 + std::max(exp->get_depth(), std::max(exp_l->get_depth(), exp_r->get_depth()));}
 	virtual void show_immediate_value() const
-		{jexp->show_immediate_value(); dexp_l->show_immediate_value(); dexp_r->show_immediate_value();}
-	virtual data_exp_ctype<T>& get_left_item() const {return dexp_l;}
-	virtual data_exp_ctype<T>& get_right_item() const {return dexp_r;}
+		{exp->show_immediate_value(); exp_l->show_immediate_value(); exp_r->show_immediate_value();}
+	exp_type<T> clone() const {return std::make_shared<question_exp<T>>(exp, exp_l, exp_r);}
+	virtual exp_type<T> get_road_map() const {return exp;}
+	virtual exp_type<T> get_left_item() const {return exp_l;}
+	virtual exp_type<T> get_right_item() const {return exp_r;}
 
-	virtual data_exp_type<T> to_negative() const {return std::make_shared<negative_data_exp<T>>(clone());}
-	virtual data_exp_type<T> final_optimize() const
+	virtual T data(const std::function<T(const std::string&)>& cb) const {return exp->judge(cb) ? (*exp_l)(cb) : (*exp_r)(cb);}
+	virtual void clear() {exp.reset(); exp_l.reset(); exp_r.reset();}
+
+	virtual exp_type<T> final_optimize() const
 	{
-		jexp->final_optimize();
-		auto l = dexp_l->final_optimize();
-		auto r = dexp_r->final_optimize();
+		auto m = exp->final_optimize();
+		auto l = exp_l->final_optimize();
+		auto r = exp_r->final_optimize();
 
-		return std::make_shared<question_exp<T>>(jexp, l ? l : dexp_l, r ? r : dexp_r);
+		return (m || l || r) ? std::make_shared<question_exp<T>>(m ? m : exp, l ? l : exp_l, r ? r : exp_r) : exp_type<T>();
 	}
 
-	virtual T operator()(const std::function<T(const std::string&)>& cb) const {return (*jexp)(cb) ? (*dexp_l)(cb) : (*dexp_r)(cb);}
-
-protected:
-	data_exp_type<T> clone() const {return std::make_shared<question_exp<T>>(jexp, dexp_l, dexp_r);}
-
 private:
-	virtual bool select_branch(data_exp_type<T>& dexp, const std::function<T(const std::string&)>& cb) const
-		{dexp = qme::safe_execute(jexp, cb) ? dexp_l : dexp_r; return true;}
-	virtual void clear() {safe_delete(jexp); dexp_l.reset(); dexp_r.reset();}
-
-private:
-	judge_exp_type<T> jexp;
-	data_exp_type<T> dexp_l, dexp_r;
+	exp_type<T> exp, exp_l, exp_r;
 };
+/////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename T> class simple_question_exp : public data_exp<T>
+/////////////////////////////////////////////////////////////////////////////////////////
+template <typename T> inline bool is_selector(exp_ctype<T>& exp) {return (bool) exp->get_road_map();}
+template <typename T> inline bool is_composite(exp_ctype<T>& exp) {return is_selector(exp) || exp->get_left_item();}
+
+//since recursion is used during the whole compilation and execution, if your expression is too complicated to
+// be compiled and executed (stack overflow), use
+// qme::O0/qme::O1 to compile it,
+// qme::safe_data/qme::safe_judge to execute it and
+// qme::safe_delete to delete it,
+//then recursion will be eliminated, but additional runtime judgement will be performed, we have no choice.
+//
+//with optimization level qme::O0/qme::O1, following functions are still available, if you're encountering above situation,
+//you should not call them manually, please note:
+// get_depth
+// show_immediate_value
+// to_negative
+// final_optimize
+// is_easy_to_negative
+// is_negative
+// merge_with
+// trim_myself
+//return the data and max depth (just traveled branches).
+template <typename T> inline std::pair<T, int> safe_data(exp_ctype<T>& exp, const std::function<T(const std::string&)>& cb)
 {
-public:
-	simple_question_exp(judge_exp_ctype<T>& _jexp) : jexp(_jexp) {}
+	if (!is_composite(exp))
+		return std::make_pair((*exp)(cb), 1);
 
-	virtual int get_depth() const {return 1 + jexp->get_depth();}
-	virtual void show_immediate_value() const {jexp->show_immediate_value();}
+	auto depth = 1, max_depth = 0;
+	std::list<std::pair<exp_type<T>, int>> exps; //current branch: -1 - before handling, 0 - road map, 1 - left branch, 2 - right branch
+	auto direction = 0; //0 - road map, 1 - left-bottom, 2 - right-bottom, 3 - top-left
+	exps.emplace_back(exp, -1);
+	std::list<immediate_data_exp<T>> res;
+	for (auto iter = exps.rbegin(); iter != exps.rend();)
+		if (0 == direction) //road map
+		{
+			iter->second = 0;
+			auto road_map = iter->first->get_road_map();
+			if (!road_map)
+				direction = 1;
+			else if (is_composite(road_map))
+			{
+				++depth;
+				exps.emplace_back(road_map, -1);
+				iter = exps.rbegin();
+			}
+			else
+			{
+				res.emplace_back((T) road_map->judge(cb));
+				direction = 3;
+				max_depth = std::max(depth + 1, max_depth);
+			}
+		}
+		else if (1 == direction) //left
+		{
+			iter->second = 1;
+			auto left = iter->first->get_left_item();
+			if (is_composite(left))
+			{
+				++depth;
+				exps.emplace_back(left, -1);
+				iter = exps.rbegin();
+				direction = 0;
+			}
+			else
+			{
+				res.emplace_back((*left)(cb));
+				direction = is_selector(iter->first) ? 3 : 2;
+				max_depth = std::max(depth + 1, max_depth);
+			}
+		}
+		else if (2 == direction) //right
+		{
+			iter->second = 2;
+			if (iter->first->is_reverser() || iter->first->need_to_bool())
+			{
+				direction = 3;
+				continue;
+			}
+			else if (!is_selector(iter->first))
+			{
+				auto& lop = iter->first->get_operator();
+				if (is_logical_operator(lop))
+				{
+					assert(!res.empty());
+					auto re = res.back().to_bool();
+					if ("&&" == lop ? !re : re)
+					{
+						direction = 3; //short circuit control
+						continue;
+					}
+					res.pop_back();
+				}
+			}
 
-	virtual data_exp_type<T> to_negative() const {return std::make_shared<negative_data_exp<T>>(clone());}
-	virtual data_exp_type<T> final_optimize() const
-	{
-		jexp->final_optimize();
-		return std::make_shared<simple_question_exp<T>>(jexp);
-	}
+			auto right = iter->first->get_right_item();
+			if (is_composite(right))
+			{
+				++depth;
+				exps.emplace_back(right, -1);
+				iter = exps.rbegin();
+				direction = 0;
+			}
+			else
+			{
+				res.emplace_back((*right)(cb));
+				direction = 3;
+				max_depth = std::max(depth + 1, max_depth);
+			}
+		}
+		else //3 == direction, backtrace
+		{
+			if (iter->first->is_reverser())
+			{
+				assert(!res.empty());
+				if (iter->first->is_data())
+					res.back().negate();
+				else
+					res.back().to_not();
+			}
+			else if (iter->first->need_to_bool())
+			{
+				assert(!res.empty());
+				res.back().to_bool();
+			}
+			else if (!is_selector(iter->first))
+			{
+				auto& op = iter->first->get_operator();
+				if (is_logical_operator(op))
+				{
+					assert(!res.empty());
+					res.back().to_bool();
+				}
+				else if (is_comparer(op))
+				{
+					assert(res.size() > 1);
+					T re = res.back();
+					res.pop_back();
+					res.back().compare(op, re);
+				}
+				else //+-*/
+				{
+					assert(res.size() > 1);
+					T re = res.back();
+					res.pop_back();
+					res.back().calculate(op.front(), re);
+				}
+			}
 
-	virtual T operator()(const std::function<T(const std::string&)>& cb) const {return (T) (*jexp)(cb);}
+			if (0 == iter->second) //road map
+			{
+				assert(!res.empty());
+				direction = (bool) (T) res.back() ? 1 : 2;
+				res.pop_back();
+			}
+			else
+			{
+				--depth;
+				++iter;
+				if (iter != exps.rend())
+				{
+					if (is_selector(iter->first))
+						iter = decltype(iter)(exps.erase(iter.base(), std::end(exps)));
+					else if (1 == iter->second)
+					{
+						iter = decltype(iter)(exps.erase(iter.base(), std::end(exps)));
+						direction = 2;
+					}
+				}
+			}
+		}
 
-protected:
-	data_exp_type<T> clone() const {return std::make_shared<simple_question_exp<T>>(jexp);}
+	assert(0 == depth && max_depth > 0 && exps.size() > 0 && 1 == res.size());
+	return std::make_pair((T) res.back(), max_depth);
+}
 
-private:
-	virtual bool select_branch(data_exp_type<T>& dexp, const std::function<T(const std::string&)>& cb) const
-		{dexp = std::make_shared<immediate_data_exp<T>>((T) qme::safe_execute(jexp, cb)); return true;}
-	virtual void clear() {safe_delete(jexp);}
+//return the data and max depth (just traveled branches).
+template <typename T> inline std::pair<bool, int> safe_judge(exp_ctype<T>& exp, const std::function<T(const std::string&)>& cb)
+{
+	auto re = safe_data(exp, cb);
+	return std::make_pair((bool) re.first, re.second);
+}
 
-private:
-	judge_exp_type<T> jexp;
-};
+#define TRAVEL_EXP(branch_name, current_branch) \
+iter->second = current_branch; \
+auto branch = iter->first->branch_name(); \
+if (!branch) \
+	direction = current_branch + 1; \
+else if (is_composite(branch)) \
+{ \
+	++depth; \
+	exps.emplace_back(branch, -1); \
+	iter = exps.rbegin(); \
+	direction = 0; \
+} \
+else \
+{ \
+	direction = current_branch + 1; \
+	max_depth = std::max(depth + 1, max_depth); \
+}
+
+//return the max depth.
+template <typename T> inline int safe_delete(exp_ctype<T>& exp)
+{
+	auto depth = 1, max_depth = 1;
+	std::list<std::pair<exp_type<T>, int>> exps; //current branch: -1 - before handling, 0 -road map,  1 - left branch, 2 - right branch
+	auto direction = -1; //0 - road map, 1 - left-bottom, 2 - right-bottom, 3 - top-left
+	exps.emplace_back(exp, -1);
+	for (auto iter = exps.rbegin(); iter != exps.rend();)
+		if (0 == direction) //road map
+		{
+			TRAVEL_EXP(get_road_map, 0);
+		}
+		else if (1 == direction) //left
+		{
+			TRAVEL_EXP(get_road_map, 1);
+		}
+		else if (2 == direction) //right
+		{
+			TRAVEL_EXP(get_road_map, 2);
+		}
+		else //3 == direction, backtrace
+		{
+			direction = iter->second + 1;
+			if (3 == direction)
+			{
+				--depth;
+				iter++->first->clear();
+				if (iter != exps.rend())
+				{
+					direction = iter->second + 1;
+					iter = decltype(iter)(exps.erase(iter.base(), std::end(exps)));
+				}
+			}
+		}
+
+	assert(0 == depth && max_depth > 0 && 1 == exps.size());
+	return max_depth;
+}
 /////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename T = float, typename O = O3> class compiler
@@ -1348,42 +1353,13 @@ private:
 	{
 		std::string name, raw_exp;
 		std::vector<std::string> items;
-		exp_type parsed_exp;
+		exp_type<T> parsed_exp;
 	};
 
 public:
-	//data exp to judge exp, or judge exp to data exp
-	static exp_type transform_exp(exp_ctype& exp)
-	{
-		if (exp->is_data())
-			return transform_exp(std::dynamic_pointer_cast<data_exp<T>>(exp));
-		return transform_exp(std::dynamic_pointer_cast<judge_exp<T>>(exp));
-	}
-	static data_exp_type<T> transform_exp(judge_exp_ctype<T>& judge) {assert(judge); return std::make_shared<simple_question_exp<T>>(judge);}
-	static judge_exp_type<T> transform_exp(data_exp_ctype<T>& data) {assert(data); return std::make_shared<not_equal_0_judge_exp<T>>(data);}
-
-	static data_exp_type<T> to_data_exp(exp_ctype& exp) {return std::dynamic_pointer_cast<data_exp<T>>(exp->is_data() ? exp : transform_exp(exp));}
-	static judge_exp_type<T> to_judge_exp(exp_ctype& exp) {return std::dynamic_pointer_cast<judge_exp<T>>(exp->is_judge() ? exp : transform_exp(exp));}
-
-	template <template<typename> class Exp = data_exp> static std::shared_ptr<Exp<T>> compile(const char* statement)
-		{return compile<Exp>(std::string(statement));}
-	template <template<typename> class Exp = data_exp> static std::shared_ptr<Exp<T>> compile(const std::string& statement)
-	{
-		auto exp = compile(statement);
-		if (!exp)
-			return std::shared_ptr<Exp<T>>();
-
-		auto re = std::dynamic_pointer_cast<Exp<T>>(exp);
-		if (!re)
-			re = std::dynamic_pointer_cast<Exp<T>>(transform_exp(exp));
-		if (!re)
-			puts("\033[31mincomplete expression!\033[0m");
-
-		return re;
-	}
-
-	static exp_type compile(const char* statement) {return compile(std::string(statement));}
-	static exp_type compile(const std::string& statement)
+	static exp_type<T> to_judge_exp(exp_ctype<T>& exp) {return exp->is_data() ? std::make_shared<transparent_judge_exp<T>>(exp) : exp;}
+	static exp_type<T> compile(const char* statement) {return compile(std::string(statement));}
+	static exp_type<T> compile(const std::string& statement)
 	{
 		try
 		{
@@ -1446,14 +1422,9 @@ public:
 				throw("incomplete expression!");
 			else if (O::level() > 1)
 			{
-				if (re->is_data())
-				{
-					auto final_re = std::dynamic_pointer_cast<data_exp<T>>(re)->final_optimize();
-					if (final_re)
-						re = final_re;
-				}
-				else
-					std::dynamic_pointer_cast<judge_exp<T>>(re)->final_optimize();
+				auto final_re = re->final_optimize();
+				if (final_re)
+					re = final_re;
 #ifdef DEBUG
 				printf(" max depth: %d\n immediate values:", re->get_depth());
 				re->show_immediate_value();
@@ -1468,7 +1439,7 @@ public:
 		catch (const char* e) {printf("\033[31m%s\033[0m\n", e);}
 		catch (...) {puts("\033[31munknown exception happened!\033[0m");}
 
-		return exp_type();
+		return exp_type<T>();
 	}
 
 private:
@@ -1647,7 +1618,7 @@ private:
 		return items;
 	}
 
-	static void finish_data_exp(data_exp_type<T>& data_1, data_exp_type<T>&& data_2, std::string& op_1, const std::string& op_2 = std::string())
+	static void finish_data_exp(exp_type<T>& data_1, exp_type<T>&& data_2, std::string& op_1, const std::string& op_2 = std::string())
 	{
 		if (!data_1)
 			throw("missing (logical) operand!");
@@ -1666,19 +1637,18 @@ private:
 			throw("missing operand!");
 	}
 
-	static void merge_data_exp(data_exp_type<T>& data_1, data_exp_type<T>& data_2, std::string& op_1, std::string& op_2,
-		data_exp_type<T>&& data)
+	static void merge_data_exp(exp_type<T>& data_1, exp_type<T>& data_2, std::string& op_1, std::string& op_2, exp_type<T>&& data)
 	{
 		assert(data);
 		if (data_2)
-			finish_data_exp(data_2, std::forward<data_exp_type<T>>(data), op_2);
+			finish_data_exp(data_2, std::forward<exp_type<T>>(data), op_2);
 		else if (data_1)
 		{
 			assert(op_2.empty());
 			if (is_operator_1(op_1))
 				data_2 = data;
 			else
-				finish_data_exp(data_1, std::forward<data_exp_type<T>>(data), op_1);
+				finish_data_exp(data_1, std::forward<exp_type<T>>(data), op_1);
 		}
 		else
 		{
@@ -1687,7 +1657,7 @@ private:
 		}
 	}
 
-	static void finish_judge_exp(judge_exp_type<T>& judge_1, judge_exp_type<T>&& judge_2, std::string& lop_1, const std::string& lop_2 = std::string())
+	static void finish_judge_exp(exp_type<T>& judge_1, exp_type<T>&& judge_2, std::string& lop_1, const std::string& lop_2 = std::string())
 	{
 		if (!lop_2.empty() || !judge_1)
 			throw("missing logical operand!");
@@ -1704,19 +1674,18 @@ private:
 			throw("missing logical operand!");
 	}
 
-	static void merge_judge_exp(judge_exp_type<T>& judge_1, judge_exp_type<T>& judge_2, std::string& lop_1, std::string& lop_2,
-		judge_exp_type<T>&& judge)
+	static void merge_judge_exp(exp_type<T>& judge_1, exp_type<T>& judge_2, std::string& lop_1, std::string& lop_2, exp_type<T>&& judge)
 	{
 		assert(judge);
 		if (judge_2)
-			finish_judge_exp(judge_2, std::forward<judge_exp_type<T>>(judge), lop_2);
+			finish_judge_exp(judge_2, std::forward<exp_type<T>>(judge), lop_2);
 		else if (judge_1)
 		{
 			assert(lop_2.empty());
 			if ("||" == lop_1)
 				judge_2 = judge;
 			else
-				finish_judge_exp(judge_1, std::forward<judge_exp_type<T>>(judge), lop_1);
+				finish_judge_exp(judge_1, std::forward<exp_type<T>>(judge), lop_1);
 		}
 		else
 		{
@@ -1725,9 +1694,9 @@ private:
 		}
 	}
 
-	static void finish_data_and_merge_judge_exp(data_exp_type<T>& dc, std::string& c,
-		data_exp_type<T>& data_1, data_exp_type<T>& data_2, std::string& op_1, std::string& op_2,
-		judge_exp_type<T>& judge_1, judge_exp_type<T>& judge_2, std::string& lop_1, std::string& lop_2)
+	static void finish_data_and_merge_judge_exp(exp_type<T>& dc, std::string& c,
+		exp_type<T>& data_1, exp_type<T>& data_2, std::string& op_1, std::string& op_2,
+		exp_type<T>& judge_1, exp_type<T>& judge_2, std::string& lop_1, std::string& lop_2)
 	{
 		if (data_1)
 			finish_data_exp(data_1, std::move(data_2), op_1, op_2);
@@ -1742,20 +1711,20 @@ private:
 				if (judge_2 || !lop_1.empty() || !lop_2.empty())
 					throw ("missing logical operand!");
 
-				judge_1 = make_binary_judge_exp(dc, transform_exp(judge_1), c);
+				judge_1 = make_binary_judge_exp(dc, judge_1, c);
 			}
 			dc.reset();
 			c.clear();
 		}
 		else if (data_1)
-			merge_judge_exp(judge_1, judge_2, lop_1, lop_2, transform_exp(data_1));
+			merge_judge_exp(judge_1, judge_2, lop_1, lop_2, std::forward<exp_type<T>>(data_1));
 
 		data_1.reset();
 	}
 
-	static void finish_data_and_judge_exp(data_exp_type<T>& dc, std::string& c, bool to_data,
-		data_exp_type<T>& data_1, data_exp_type<T>& data_2, std::string& op_1, std::string& op_2,
-		judge_exp_type<T>& judge_1, judge_exp_type<T>& judge_2, std::string& lop_1, std::string& lop_2)
+	static void finish_data_and_judge_exp(exp_type<T>& dc, std::string& c, bool to_data,
+		exp_type<T>& data_1, exp_type<T>& data_2, std::string& op_1, std::string& op_2,
+		exp_type<T>& judge_1, exp_type<T>& judge_2, std::string& lop_1, std::string& lop_2)
 	{
 		if (!c.empty() || dc || !data_1 || judge_1)
 		{
@@ -1763,7 +1732,7 @@ private:
 			finish_judge_exp(judge_1, std::move(judge_2), lop_1, lop_2);
 			if (to_data)
 			{
-				data_1 = transform_exp(judge_1);
+				data_1 = judge_1;
 				judge_1.reset();
 			}
 		}
@@ -1771,21 +1740,29 @@ private:
 			finish_data_exp(data_1, std::move(data_2), op_1, op_2);
 	}
 
-	static judge_exp_type<T> bang(judge_exp_ctype<T>& judge)
+	static exp_type<T> bang(exp_ctype<T>& exp)
 	{
-		if (O::level() < 2 && exp::is_composite(judge) && (exp::is_composite(judge->get_left_item()) || exp::is_composite(judge->get_right_item())))
-			return std::make_shared<not_judge_exp<T>>(judge);
-		return judge->bang();
+		if (O::level() < 2 && exp->is_composite() && (exp->get_left_item()->is_composite() || exp->get_right_item()->is_composite()))
+			return std::make_shared<not_judge_exp<T>>(exp);
+
+		auto re = exp->bang(); //'!(-(a > 0)) ?' equals to '!(a > 0)'
+		if (re->is_data() || !re->is_reverser())
+			return re;
+
+		auto l = re->get_left_item(); //not_judge_exp
+		if (O::level() < 2 && l->is_composite() && (l->get_left_item()->is_composite() || l->get_right_item()->is_composite()))
+			return re;
+		return l->bang(); //'!(a > 0)' equals to 'a <= 0'
 	}
 
-	static data_exp_type<T> to_negative(data_exp_ctype<T>& data)
+	static exp_type<T> to_negative(exp_ctype<T>& exp)
 	{
-		if (O::level() < 2 && data_exp<T>::is_composite(data) && (data_exp<T>::is_composite(data->get_left_item()) || data_exp<T>::is_composite(data->get_right_item())))
-			return std::make_shared<negative_data_exp<T>>(data);
-		return data->to_negative();
+		if (O::level() < 2 && exp->is_composite() && (exp->get_left_item()->is_composite() || exp->get_right_item()->is_composite()))
+			return std::make_shared<negative_data_exp<T>>(exp);
+		return exp->to_negative();
 	}
 
-	static exp_type compile(const std::vector<std::string>& items, const std::map<std::string, sub_exp>& sub_exps)
+	static exp_type<T> compile(const std::vector<std::string>& items, const std::map<std::string, sub_exp>& sub_exps)
 	{
 		size_t index = 0, end_index = items.size();
 		try {return compile(items, sub_exps, index, end_index);}
@@ -1840,7 +1817,7 @@ private:
 		last_operator = op;
 	}
 
-	static exp_type compile(const std::vector<std::string>& items, const std::map<std::string, sub_exp>& sub_exps,
+	static exp_type<T> compile(const std::vector<std::string>& items, const std::map<std::string, sub_exp>& sub_exps,
 		size_t& index, size_t end_index)
 	{
 		if (index >= end_index)
@@ -1850,17 +1827,17 @@ private:
 		auto negative = -1; //number of -, 0 means at least one +
 		auto revert = 0; //number of !
 
-		data_exp_type<T> data_1, data_2;
+		exp_type<T> data_1, data_2; //treat as data (which means they can be judgements)
 		std::string op_1, op_2;
 
-		data_exp_type<T> dc; //merged comparand (from data_1 and data_2 with op_1)
+		exp_type<T> dc; //merged comparand (from data_1 and data_2 with op_1)
 		std::string c; //comparer
 
-		judge_exp_type<T> judge_1, judge_2;
+		exp_type<T> judge_1, judge_2; //treat as judge (which means they can be data)
 		std::string lop_1, lop_2;
 
-		judge_exp_type<T> fj; //for final question exp
-		data_exp_type<T> fd_1, fd_2; //for final question exp
+		exp_type<T> fj; //for final question exp, treat as judge (which means they can be data)
+		exp_type<T> fd_1, fd_2; //for final question exp, treat as data (which means they can be judgements)
 
 		while (index < end_index)
 		{
@@ -1873,18 +1850,18 @@ private:
 			}
 			else if (is_operator(item))
 			{
-				data_exp_type<T> data;
+				exp_type<T> data;
 				if (judge_2)
 				{
 					if (lop_2.empty())
 					{
-						data = transform_exp(judge_2);
+						data = judge_2;
 						judge_2.reset();
 					}
 				}
 				else if (judge_1 && lop_1.empty())
 				{
-					data = transform_exp(judge_1);
+					data = judge_1;
 					judge_1.reset();
 				}
 
@@ -1942,7 +1919,7 @@ private:
 						if (!lop_2.empty())
 							throw("missing operand!");
 
-						data_1 = transform_exp(judge_2);
+						data_1 = judge_2;
 						judge_2.reset();
 					}
 					else if (judge_1)
@@ -1951,7 +1928,7 @@ private:
 						if (!lop_1.empty())
 							throw("missing operand!");
 
-						data_1 = transform_exp(judge_1);
+						data_1 = judge_1;
 						judge_1.reset();
 					}
 				}
@@ -2006,7 +1983,7 @@ private:
 			}
 			else
 			{
-				exp_type parsed_exp;
+				exp_type<T> parsed_exp;
 				if ('$' == item[0])
 				{
 					auto iter = sub_exps.find(item);
@@ -2018,18 +1995,26 @@ private:
 				else
 					parsed_exp = parse_data(item);
 
+				auto is_judge = !parsed_exp->is_data();
 				if (revert > 0)
-					parsed_exp = 1 == (revert & 1) ? bang(to_judge_exp(parsed_exp)) : to_judge_exp(parsed_exp);
+				{
+					is_judge = true;
+					parsed_exp = 1 == (revert & 1) ? bang(parsed_exp) : to_judge_exp(parsed_exp);
+				}
 				if (negative >= 0)
-					parsed_exp = 1 == (negative & 1) ? to_negative(to_data_exp(parsed_exp)) : to_data_exp(parsed_exp);
+				{
+					is_judge = false;
+					if (1 == (negative & 1))
+						parsed_exp = to_negative(parsed_exp);
+				}
 				last_operator = '\0';
 				negative = -1;
 				revert = 0;
 
-				if (!dc && !data_1 && parsed_exp->is_judge())
-					merge_judge_exp(judge_1, judge_2, lop_1, lop_2, std::dynamic_pointer_cast<judge_exp<T>>(parsed_exp));
+				if (!dc && !data_1 && is_judge)
+					merge_judge_exp(judge_1, judge_2, lop_1, lop_2, std::move(parsed_exp));
 				else
-					merge_data_exp(data_1, data_2, op_1, op_2, to_data_exp(parsed_exp));
+					merge_data_exp(data_1, data_2, op_1, op_2, std::move(parsed_exp));
 			}
 
 			if (negative >= 0)
