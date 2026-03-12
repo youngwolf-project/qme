@@ -183,7 +183,7 @@ public:
 		{return exp_l->is_reverser() && !exp_l->is_data() ? exp_l->bang() : std::make_shared<not_judge_exp<T>>(exp_l); }
 
 	virtual void clear() {exp_l.reset();}
-	virtual exp_type<T> final_optimize()
+	virtual exp_type<T> final_optimize() const
 	{
 		auto l = exp_l->final_optimize();
 		return l ? std::make_shared<negative_data_exp<T>>(l) : exp_type<T>();

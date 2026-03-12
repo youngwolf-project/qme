@@ -31,7 +31,7 @@ template<typename T> void execute_qme(cpu_timer& timer, qme::exp_ctype<T>& exp,
 	const std::function<T(const std::string&)>& cb, T exp_re, int& exec_succ, int& match)
 {
 	timer.restart();
-	auto re = (*exp)(cb); //to calculate 'exp' as a judgement, use 'exp->judge(cb)'.
+	auto re = (*exp)(cb); //to calculate 'exp' as a judgement, use 'exp->judge(cb)'
 	//since recursion is used during the whole compilation and execution, if your expression is too complicated to
 	// be compiled and executed (stack overflow), use
 	// qme::O0/qme::O1 to compile it,
