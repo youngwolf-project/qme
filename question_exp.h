@@ -1121,7 +1121,8 @@ template <typename T> inline std::pair<T, int> safe_data(exp_ctype<T>& exp, cons
 	if (!is_composite(exp))
 		return std::make_pair((*exp)(cb), 1);
 
-	auto depth = 1, max_depth = 0;
+	size_t max_depth = 1;
+	//the max depth is the max size that this list ever get, so please use at least gcc 5 since we need std::list::size() to have O(1) complexity
 	std::list<std::pair<exp_type<T>, int>> exps; //current branch: -1 - before handling, 0 - road map, 1 - left branch, 2 - right branch
 	auto direction = 0; //0 - road map, 1 - left-bottom, 2 - right-bottom, 3 - top-left
 	exps.emplace_back(exp, -1);
@@ -1135,7 +1136,6 @@ template <typename T> inline std::pair<T, int> safe_data(exp_ctype<T>& exp, cons
 				direction = 1;
 			else if (is_composite(road_map))
 			{
-				++depth;
 				exps.emplace_back(road_map, -1);
 				iter = exps.rbegin();
 			}
@@ -1143,7 +1143,7 @@ template <typename T> inline std::pair<T, int> safe_data(exp_ctype<T>& exp, cons
 			{
 				res.emplace_back((T) road_map->judge(cb));
 				direction = 3;
-				max_depth = std::max(depth + 1, max_depth);
+				max_depth = std::max(exps.size() + 1, max_depth);
 			}
 		}
 		else if (1 == direction) //left
@@ -1152,7 +1152,6 @@ template <typename T> inline std::pair<T, int> safe_data(exp_ctype<T>& exp, cons
 			auto left = iter->first->get_left_item();
 			if (is_composite(left))
 			{
-				++depth;
 				exps.emplace_back(left, -1);
 				iter = exps.rbegin();
 				direction = 0;
@@ -1161,7 +1160,7 @@ template <typename T> inline std::pair<T, int> safe_data(exp_ctype<T>& exp, cons
 			{
 				res.emplace_back((*left)(cb));
 				direction = is_selector(iter->first) ? 3 : 2;
-				max_depth = std::max(depth + 1, max_depth);
+				max_depth = std::max(exps.size() + 1, max_depth);
 			}
 		}
 		else if (2 == direction) //right
@@ -1178,7 +1177,7 @@ template <typename T> inline std::pair<T, int> safe_data(exp_ctype<T>& exp, cons
 				if (is_logical_operator(lop))
 				{
 					assert(!res.empty());
-					auto re = to_bool(res.back());
+					auto re = 0 != res.back();
 					if ("&&" == lop ? !re : re)
 					{
 						direction = 3; //short circuit control
@@ -1191,7 +1190,6 @@ template <typename T> inline std::pair<T, int> safe_data(exp_ctype<T>& exp, cons
 			auto right = iter->first->get_right_item();
 			if (is_composite(right))
 			{
-				++depth;
 				exps.emplace_back(right, -1);
 				iter = exps.rbegin();
 				direction = 0;
@@ -1200,7 +1198,7 @@ template <typename T> inline std::pair<T, int> safe_data(exp_ctype<T>& exp, cons
 			{
 				res.emplace_back((*right)(cb));
 				direction = 3;
-				max_depth = std::max(depth + 1, max_depth);
+				max_depth = std::max(exps.size() + 1, max_depth);
 			}
 		}
 		else //3 == direction, backtrace
@@ -1226,110 +1224,92 @@ template <typename T> inline std::pair<T, int> safe_data(exp_ctype<T>& exp, cons
 					assert(!res.empty());
 					to_bool(res.back());
 				}
-				else if (is_comparer(op))
+				else
 				{
 					assert(res.size() > 1);
 					auto re = res.back();
 					res.pop_back();
-					compare(res.back(), op, re);
-				}
-				else //+-*/
-				{
-					assert(res.size() > 1);
-					auto re = res.back();
-					res.pop_back();
-					calculate(res.back(), op.front(), re);
+					if (is_comparer(op))
+						compare(res.back(), op, re);
+					else //+-*/
+						calculate(res.back(), op.front(), re);
 				}
 			}
 
 			if (0 == iter->second) //road map
 			{
 				assert(!res.empty());
-				direction = (bool) res.back() ? 1 : 2;
+				direction = 0 != res.back() ? 1 : 2;
 				res.pop_back();
 			}
-			else
+			else if (++iter != exps.rend())
 			{
-				--depth;
-				++iter;
-				if (iter != exps.rend())
+				if (is_selector(iter->first))
+					iter = decltype(iter)(exps.erase(iter.base(), std::end(exps)));
+				else if (1 == iter->second)
 				{
-					if (is_selector(iter->first))
-						iter = decltype(iter)(exps.erase(iter.base(), std::end(exps)));
-					else if (1 == iter->second)
-					{
-						iter = decltype(iter)(exps.erase(iter.base(), std::end(exps)));
-						direction = 2;
-					}
+					iter = decltype(iter)(exps.erase(iter.base(), std::end(exps)));
+					direction = 2;
 				}
 			}
 		}
 
-	assert(0 == depth && max_depth > 0 && exps.size() > 0 && 1 == res.size());
+	assert(max_depth > 1 && exps.size() > 0 && 1 == res.size());
+#ifdef DEBUG
+	std::cout << " max depth: " << max_depth << std::endl;
+#endif
 	return std::make_pair(res.back(), max_depth);
 }
 
 //return the data and max depth (just traveled branches).
-template <typename T> inline std::pair<bool, int> safe_judge(exp_ctype<T>& exp, const std::function<T(const std::string&)>& cb)
+template <typename T> inline std::pair<bool, size_t> safe_judge(exp_ctype<T>& exp, const std::function<T(const std::string&)>& cb)
 {
 	auto re = safe_data(exp, cb);
-	return std::make_pair((bool) re.first, re.second);
+	return std::make_pair(0 != re.first, re.second);
 }
 
-#define TRAVEL_EXP(branch_name, current_branch) \
-iter->second = current_branch; \
-auto branch = iter->first->branch_name(); \
-if (!branch) \
-	direction = current_branch + 1; \
-else if (is_composite(branch)) \
+#define TRAVEL_EXP(branch_name) \
 { \
-	++depth; \
-	exps.emplace_back(branch, -1); \
-	iter = exps.rbegin(); \
-	direction = 0; \
-} \
-else \
-{ \
-	direction = current_branch + 1; \
-	max_depth = std::max(depth + 1, max_depth); \
+	iter->second = direction++; \
+	auto branch = iter->first->branch_name(); \
+	if (!branch) \
+		; \
+	else if (is_composite(branch)) \
+	{ \
+		exps.emplace_back(branch, -1); \
+		iter = exps.rbegin(); \
+		direction = 0; \
+	} \
+	else \
+		max_depth = std::max(exps.size() + 1, max_depth); \
 }
 
 //return the max depth.
-template <typename T> inline int safe_delete(exp_ctype<T>& exp)
+template <typename T> inline size_t safe_delete(exp_ctype<T>& exp)
 {
-	auto depth = 1, max_depth = 1;
+	size_t max_depth = 1;
+	//the max depth is the max size that this list ever get, so please use at least gcc 5 since we need std::list::size() to have O(1) complexity
 	std::list<std::pair<exp_type<T>, int>> exps; //current branch: -1 - before handling, 0 -road map,  1 - left branch, 2 - right branch
-	auto direction = -1; //0 - road map, 1 - left-bottom, 2 - right-bottom, 3 - top-left
+	auto direction = 0; //0 - road map, 1 - left-bottom, 2 - right-bottom, 3 - top-left
 	exps.emplace_back(exp, -1);
 	for (auto iter = exps.rbegin(); iter != exps.rend();)
 		if (0 == direction) //road map
-		{
-			TRAVEL_EXP(get_road_map, 0);
-		}
+			TRAVEL_EXP(get_road_map)
 		else if (1 == direction) //left
-		{
-			TRAVEL_EXP(get_left_item, 1);
-		}
+			TRAVEL_EXP(get_left_item)
 		else if (2 == direction) //right
-		{
-			TRAVEL_EXP(get_right_item, 2);
-		}
+			TRAVEL_EXP(get_right_item)
 		else //3 == direction, backtrace
 		{
-			direction = iter->second + 1;
-			if (3 == direction)
+			iter++->first->clear();
+			if (iter != exps.rend())
 			{
-				--depth;
-				iter++->first->clear();
-				if (iter != exps.rend())
-				{
-					direction = iter->second + 1;
-					iter = decltype(iter)(exps.erase(iter.base(), std::end(exps)));
-				}
+				direction = iter->second + 1;
+				iter = decltype(iter)(exps.erase(iter.base(), std::end(exps)));
 			}
 		}
 
-	assert(0 == depth && max_depth > 0 && 1 == exps.size());
+	assert(max_depth > 0 && 1 == exps.size() && !exp->get_left_item() && !exp->get_right_item());
 	return max_depth;
 }
 /////////////////////////////////////////////////////////////////////////////////////////
