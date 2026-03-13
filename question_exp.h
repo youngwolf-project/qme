@@ -196,10 +196,28 @@ private:
 	exp_type<T> exp_l;
 };
 
+template <typename T> inline T calculate(T& operand, char op, T v)
+{
+	switch (op)
+	{
+	case '+':
+		return operand += v;
+	case '-':
+		return operand -= v;
+	case '*':
+		return operand *= v;
+	case '/':
+		if (0 == v)
+			throw("divide zero");
+		return operand /= v;
+	default:
+		throw("undefined operator " + std::string(1, op));
+	}
+}
+
 template <typename T> class immediate_data_exp : public data_exp<T>
 {
 public:
-	immediate_data_exp() : T(0) {}
 	immediate_data_exp(T v) : value(v) {}
 
 	virtual void show_immediate_value() const {std::cout << ' ' << value;}
@@ -217,59 +235,8 @@ public:
 	virtual bool is_easy_to_negative() const {return true;}
 	virtual T get_immediate_value() const {return value;}
 
-	virtual bool merge_with(char other_op, exp_ctype<T>& other_exp)
-		{return other_exp->is_immediate() ? (calculate(other_op, other_exp->get_immediate_value()), true) : false;}
-
-	operator T() const {return value;}
-	bool to_not() {return (bool) (value = (T) (0 == value));}
-	bool to_bool() {return (bool) (value = (T) (0 != value));}
-	T negate() {return value = -value;}
-
-	T calculate(char op, T v)
-	{
-		switch (op)
-		{
-		case '+':
-			value += v;
-			break;
-		case '-':
-			value -= v;
-			break;
-		case '*':
-			value *= v;
-			break;
-		case '/':
-			if (0 == v)
-				throw("divide zero");
-			value /= v;
-			break;
-		default:
-			throw("undefined operator " + std::string(1, op));
-			break;
-		}
-
-		return value;
-	}
-
-	bool compare(const std::string& c, T v)
-	{
-		if (">" == c)
-			value = (T) (value > v);
-		else if (">=" == c)
-			value = (T) (value >= v);
-		else if ("<" == c)
-			value = (T) (value < v);
-		else if ("<=" == c)
-			value = (T) (value <= v);
-		else if ("==" == c)
-			value = (T) (value == v);
-		else if ("!=" == c)
-			value = (T) (value != v);
-		else
-			throw("unknown compare operator " + c);
-
-		return (bool) value;
-	}
+	virtual bool merge_with(char op, exp_ctype<T>& exp)
+		{return exp->is_immediate() ? (calculate(value, op, exp->get_immediate_value()), true) : false;}
 
 private:
 	T value;
@@ -1110,6 +1077,27 @@ private:
 template <typename T> inline bool is_selector(exp_ctype<T>& exp) {return (bool) exp->get_road_map();}
 template <typename T> inline bool is_composite(exp_ctype<T>& exp) {return is_selector(exp) || exp->get_left_item();}
 
+template <typename T> inline bool to_not(T& operand) {return (bool) (operand = (T) (0 == operand));}
+template <typename T> inline bool to_bool(T& operand) {return (bool) (operand = (T) (0 != operand));}
+template <typename T> inline T negate(T& operand) {return operand = -operand;}
+template <typename T> inline bool compare(T& operand, const std::string& c, T v)
+{
+	if (">" == c)
+		return (bool) (operand = (T) (operand > v));
+	else if (">=" == c)
+		return (bool) (operand = (T) (operand >= v));
+	else if ("<" == c)
+		return (bool) (operand = (T) (operand < v));
+	else if ("<=" == c)
+		return (bool) (operand = (T) (operand <= v));
+	else if ("==" == c)
+		return (bool) (operand = (T) (operand == v));
+	else if ("!=" == c)
+		return (bool) (operand = (T) (operand != v));
+	else
+		throw("unknown compare operator " + c);
+}
+
 //since recursion is used during the whole compilation and execution, if your expression is too complicated to
 // be compiled and executed (stack overflow), use
 // qme::O0/qme::O1 to compile it,
@@ -1137,7 +1125,7 @@ template <typename T> inline std::pair<T, int> safe_data(exp_ctype<T>& exp, cons
 	std::list<std::pair<exp_type<T>, int>> exps; //current branch: -1 - before handling, 0 - road map, 1 - left branch, 2 - right branch
 	auto direction = 0; //0 - road map, 1 - left-bottom, 2 - right-bottom, 3 - top-left
 	exps.emplace_back(exp, -1);
-	std::list<immediate_data_exp<T>> res;
+	std::list<T> res;
 	for (auto iter = exps.rbegin(); iter != exps.rend();)
 		if (0 == direction) //road map
 		{
@@ -1190,7 +1178,7 @@ template <typename T> inline std::pair<T, int> safe_data(exp_ctype<T>& exp, cons
 				if (is_logical_operator(lop))
 				{
 					assert(!res.empty());
-					auto re = res.back().to_bool();
+					auto re = to_bool(res.back());
 					if ("&&" == lop ? !re : re)
 					{
 						direction = 3; //short circuit control
@@ -1221,14 +1209,14 @@ template <typename T> inline std::pair<T, int> safe_data(exp_ctype<T>& exp, cons
 			{
 				assert(!res.empty());
 				if (iter->first->is_data())
-					res.back().negate();
+					negate(res.back());
 				else
-					res.back().to_not();
+					to_not(res.back());
 			}
 			else if (iter->first->need_to_bool())
 			{
 				assert(!res.empty());
-				res.back().to_bool();
+				to_bool(res.back());
 			}
 			else if (!is_selector(iter->first))
 			{
@@ -1236,28 +1224,28 @@ template <typename T> inline std::pair<T, int> safe_data(exp_ctype<T>& exp, cons
 				if (is_logical_operator(op))
 				{
 					assert(!res.empty());
-					res.back().to_bool();
+					to_bool(res.back());
 				}
 				else if (is_comparer(op))
 				{
 					assert(res.size() > 1);
-					T re = res.back();
+					auto re = res.back();
 					res.pop_back();
-					res.back().compare(op, re);
+					compare(res.back(), op, re);
 				}
 				else //+-*/
 				{
 					assert(res.size() > 1);
-					T re = res.back();
+					auto re = res.back();
 					res.pop_back();
-					res.back().calculate(op.front(), re);
+					calculate(res.back(), op.front(), re);
 				}
 			}
 
 			if (0 == iter->second) //road map
 			{
 				assert(!res.empty());
-				direction = (bool) (T) res.back() ? 1 : 2;
+				direction = (bool) res.back() ? 1 : 2;
 				res.pop_back();
 			}
 			else
@@ -1278,7 +1266,7 @@ template <typename T> inline std::pair<T, int> safe_data(exp_ctype<T>& exp, cons
 		}
 
 	assert(0 == depth && max_depth > 0 && exps.size() > 0 && 1 == res.size());
-	return std::make_pair((T) res.back(), max_depth);
+	return std::make_pair(res.back(), max_depth);
 }
 
 //return the data and max depth (just traveled branches).
