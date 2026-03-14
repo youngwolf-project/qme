@@ -1116,7 +1116,7 @@ template <typename T> inline bool compare(T& operand, const std::string& c, T v)
 // merge_with
 // trim_myself
 //return the data and max depth (just traveled branches).
-template <typename T> inline std::pair<T, int> safe_data(exp_ctype<T>& exp, const std::function<T(const std::string&)>& cb)
+template <typename T> inline std::pair<T, size_t> safe_data(exp_ctype<T>& exp, const std::function<T(const std::string&)>& cb)
 {
 	if (!is_composite(exp))
 		return std::make_pair((*exp)(cb), 1);
