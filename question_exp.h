@@ -114,9 +114,9 @@ public:
 
 	virtual exp_type<T> clone() const = 0;
 	virtual const std::string& get_operator() const {throw("unsupported get operator operation");} // * / + - > >= < <= == != && ||
-	virtual exp_type<T> get_road_map() const {return exp_type<T>();}
-	virtual exp_type<T> get_left_item() const {return exp_type<T>();}
-	virtual exp_type<T> get_right_item() const {return exp_type<T>();}
+	virtual exp_ctype<T>& get_road_map() const {static exp_ctype<T> na; return na;}
+	virtual exp_ctype<T>& get_left_item() const {return get_road_map();}
+	virtual exp_ctype<T>& get_right_item() const {return get_road_map();}
 
 	inline T operator()(const std::function<T(const std::string&)>& cb) const {return data(cb);}
 	virtual T data(const std::function<T(const std::string&)>&) const = 0;
@@ -145,6 +145,48 @@ public:
 	virtual exp_type<T> trim_myself() {return exp_type<T>();}
 	/////////////////////////////////////////////////////////////////////////////////////////
 	//for data expression only
+};
+
+template <typename T, template <typename> class EXP> class unitary_exp : public EXP<T>
+{
+protected:
+	unitary_exp(exp_ctype<T>& _exp_l) : exp_l(_exp_l) {}
+
+public:
+	virtual int get_depth() const {return 1 + exp_l->get_depth();}
+	virtual void show_immediate_value() const {exp_l->show_immediate_value();}
+	virtual exp_ctype<T>& get_left_item() const {return exp_l;}
+
+	virtual void clear() {exp_l.reset();}
+
+private:
+	exp_type<T> exp_l;
+};
+
+template <typename T, typename O> class binary_data_exp;
+template <typename T, template <typename> class EXP> class binary_exp : public EXP<T>
+{
+protected:
+	binary_exp(exp_ctype<T>& _exp_l, exp_ctype<T>& _exp_r, char c) : op(1, c), exp_l(_exp_l), exp_r(_exp_r) {}
+	binary_exp(exp_ctype<T>& _exp_l, exp_ctype<T>& _exp_r, const std::string& _op) : op(_op), exp_l(_exp_l), exp_r(_exp_r) {}
+
+public:
+	virtual int get_depth() const {return 1 + std::max(exp_l->get_depth(), exp_r->get_depth());}
+	virtual void show_immediate_value() const {exp_l->show_immediate_value(); exp_r->show_immediate_value();}
+	virtual const std::string& get_operator() const {return op;}
+	virtual exp_ctype<T>& get_left_item() const {return exp_l;}
+	virtual exp_ctype<T>& get_right_item() const {return exp_r;}
+
+	virtual void clear() {exp_l.reset(); exp_r.reset();}
+
+private:
+	template <typename, typename> friend class binary_data_exp;
+	exp_type<T>& left() {return exp_l;}
+	exp_type<T>& right() {return exp_r;}
+
+private:
+	std::string op;
+	exp_type<T> exp_l, exp_r;
 };
 
 template <typename T> class data_exp;
@@ -180,32 +222,32 @@ template <typename T> inline bool is_divisible(T dividend, T divisor)
 	return 0 == dividend || 1 == divisor || -1 == divisor || dividend == divisor || -dividend == divisor;
 }
 
-template <typename T> class negative_data_exp : public data_exp<T>
+template <typename T> class negative_data_exp : public unitary_exp<T, data_exp>
 {
 public:
-	negative_data_exp(exp_ctype<T>& _exp_l) : exp_l(_exp_l) {assert(!exp_l->is_data() || !exp_l->is_reverser());}
+	static inline bool is_my_type(exp_ctype<T>& exp) {return exp->is_data() && exp->is_reverser();}
+
+public:
+	negative_data_exp(exp_ctype<T>& exp_l) : unitary_exp<T, data_exp>(exp_l) {assert(!is_my_type(exp_l));}
 
 	virtual bool is_reverser() const {return true;}
-	virtual int get_depth() const {return 1 + exp_l->get_depth();}
-	virtual void show_immediate_value() const {exp_l->show_immediate_value();}
 	virtual exp_type<T> clone() const {throw("unsupported clone operation!");}
-	virtual exp_type<T> get_left_item() const {return exp_l;}
 
-	virtual T data(const std::function<T(const std::string&)>& cb) const {return -(*exp_l)(cb);}
-	virtual bool judge(const std::function<T(const std::string&)>& cb) const {return exp_l->judge(cb);} //equals to 0 != data(cb), but more effective
-	virtual exp_type<T> to_negative() const {return exp_l;}
+	virtual T data(const std::function<T(const std::string&)>& cb) const {return -(*this->get_left_item())(cb);}
+	virtual bool judge(const std::function<T(const std::string&)>& cb) const {return this->get_left_item()->judge(cb);} //equals to 0 != data(cb), but more effective
+	virtual exp_type<T> to_negative() const {return this->get_left_item();}
 	virtual exp_type<T> bang() const //'!(-!a)' equals to 'a?', '!(-a)' equals to '!a'
-		{return std::dynamic_pointer_cast<not_judge_exp<T>>(exp_l) ? exp_l->bang() : std::make_shared<not_judge_exp<T>>(exp_l);}
+		{auto& exp_l = this->get_left_item(); return not_judge_exp<T>::is_my_type(exp_l) ? exp_l->bang() : std::make_shared<not_judge_exp<T>>(exp_l);}
 
-	virtual void clear() {exp_l.reset();}
 	virtual exp_type<T> final_optimize() const
-		{return exp<T>::final_optimize_1(exp_l, [](exp_ctype<T>& l) {return std::make_shared<negative_data_exp<T>>(l);});}
+	{
+		return exp<T>::final_optimize_1(this->get_left_item(), [](exp_ctype<T>& l) {
+			return is_my_type(l) ? l->to_negative() : std::make_shared<negative_data_exp<T>>(l);
+		});
+	}
 
 	virtual bool is_easy_to_negative() const {return true;}
 	virtual bool is_negative() const {return true;}
-
-private:
-	exp_type<T> exp_l;
 };
 
 template <typename T> inline T calculate(T& operand, char op, T v)
@@ -257,23 +299,20 @@ private:
 template <typename T, typename O> class composite_variable_data_exp;
 template <typename T, typename O> inline exp_type<T> merge_data_exp(exp_ctype<T>&, exp_ctype<T>&, char);
 template <typename T, typename O> inline exp_type<T> make_binary_data_exp(exp_ctype<T>&, exp_ctype<T>&, char);
-template <typename T, typename O> class binary_data_exp : public data_exp<T>
+template <typename T, typename O> class binary_data_exp : public binary_exp<T, data_exp>
 {
 protected:
-	binary_data_exp(exp_ctype<T>& _exp_l, exp_ctype<T>& _exp_r, char _op) : op(1, _op), exp_l(_exp_l), exp_r(_exp_r) {}
+	using binary_exp<T, data_exp>::binary_exp;
 
 public:
 	virtual bool is_composite() const {return true;}
-	virtual int get_depth() const {return 1 + std::max(exp_l->get_depth(), exp_r->get_depth());}
-	virtual void show_immediate_value() const {exp_l->show_immediate_value(); exp_r->show_immediate_value();}
-	virtual exp_type<T> clone() const {return make_binary_data_exp<T, O>(exp_l, exp_r, op.front());}
-	virtual const std::string& get_operator() const {return op;}
-	virtual exp_type<T> get_left_item() const {return exp_l;}
-	virtual exp_type<T> get_right_item() const {return exp_r;}
+	virtual exp_type<T> clone() const {return make_binary_data_exp<T, O>(this->get_left_item(), this->get_right_item(), this->get_operator().front());}
 
 	virtual exp_type<T> to_negative() const
 	{
-		auto op = this->op.front();
+		auto op = this->get_operator().front();
+		const auto& exp_l = this->get_left_item();
+		const auto& exp_r = this->get_right_item();
 		switch (op)
 		{
 		case '+':
@@ -316,13 +355,19 @@ public:
 		return exp_type<T>();
 	}
 
-	virtual void clear() {exp_l.reset(); exp_r.reset();}
 	virtual exp_type<T> final_optimize() const
-		{return exp<T>::final_optimize_2(exp_l, exp_r, [&](exp_ctype<T>& l, exp_ctype<T>& r) {return merge_data_exp<T, O>(l, r, op.front());});}
-
+	{
+		return exp<T>::final_optimize_2(this->get_left_item(), this->get_right_item(), [this](exp_ctype<T>& l, exp_ctype<T>& r) {
+			return merge_data_exp<T, O>(l, r, this->get_operator().front());
+		});
+	}
 
 	virtual bool is_easy_to_negative() const
-		{return is_negative() || (is_operator_2(op) && (exp_l->is_easy_to_negative() || exp_r->is_easy_to_negative()));}
+	{
+		return is_negative() || (is_operator_2(this->get_operator()) &&
+			(this->get_left_item()->is_easy_to_negative() || this->get_right_item()->is_easy_to_negative()));
+	}
+
 	virtual bool is_negative() const
 	{
 		//'-a - b', '-a * b', 'a * -b', '-a / b' and 'a / -b' are considered to be negative,
@@ -339,15 +384,14 @@ public:
 		// '-a / -b'	will be transformed to 'a / b'
 		// '-a / C '	will be transformed to 'a / -C'
 		// 'C / -b '	will be transformed to '-C / b'
-		auto op = this->op.front();
-		switch (op)
+		switch (this->get_operator().front())
 		{
 		case '-':
-			return exp_l->is_negative();
+			return this->get_left_item()->is_negative();
 			break;
 		case '*':
 		case '/':
-			return exp_l->is_negative() || exp_r->is_negative();
+			return this->get_left_item()->is_negative() || this->get_right_item()->is_negative();
 			break;
 		}
 
@@ -356,7 +400,9 @@ public:
 
 	virtual bool merge_with(char other_op, exp_ctype<T>& other_exp)
 	{
-		auto op = this->op.front();
+		auto op = this->get_operator().front();
+		auto& exp_l = this->left();
+		auto& exp_r = this->right();
 		if (is_same_operator_level<O>(op, other_op))
 		{
 			if (O::level() < 2)
@@ -398,6 +444,9 @@ public:
 
 	virtual exp_type<T> trim_myself()
 	{
+		auto& exp_l = this->left();
+		auto& exp_r = this->right();
+
 		auto data = exp_l->trim_myself();
 		if (data)
 			exp_l = data;
@@ -406,8 +455,7 @@ public:
 		if (data)
 			exp_r = data;
 
-		auto op = this->op.front();
-		switch (op)
+		switch (this->get_operator().front())
 		{
 		case '+':
 			if (exp_l->is_immediate() && 0 == exp_l->get_immediate_value())
@@ -495,10 +543,6 @@ public:
 
 		return exp_type<T>();
 	}
-
-private:
-	std::string op;
-	exp_type<T> exp_l, exp_r;
 };
 
 template <typename T, typename O> class add_data_exp : public binary_data_exp<T, O>
@@ -825,73 +869,90 @@ inline exp_type<T> merge_data_exp(exp_ctype<T>& exp_l, exp_ctype<T>& exp_r, cons
 /////////////////////////////////////////////////////////////////////////////////////////
 
 /////////////////////////////////////////////////////////////////////////////////////////
-template <typename T> class unitary_judge_exp : public judge_exp<T>
+template <typename T> class transparent_judge_exp : public unitary_exp<T, judge_exp>
 {
 public:
-	unitary_judge_exp(exp_ctype<T>& _exp_l) : exp_l(_exp_l) {}
+	static inline bool is_my_type(exp_ctype<T>& exp) {return !exp->is_data() && exp->need_to_bool();}
 
-	virtual int get_depth() const {return 1 + exp_l->get_depth();}
-	virtual void show_immediate_value() const {exp_l->show_immediate_value();}
-	virtual exp_type<T> get_left_item() const {return exp_l;}
-
-	virtual void clear() {exp_l.reset();}
-
-private:
-	exp_type<T> exp_l;
-};
-
-template <typename T> class transparent_judge_exp : public unitary_judge_exp<T>
-{
 public:
-	transparent_judge_exp(exp_ctype<T>& exp_l) : unitary_judge_exp<T>(exp_l) {assert(exp_l->is_data());}
+	transparent_judge_exp(exp_ctype<T>& exp_l) :
+		unitary_exp<T, judge_exp>(negative_data_exp<T>::is_my_type(exp_l) ? exp_l->to_negative() : exp_l) //'(-a)?' equals to 'a?'
+		{assert(exp_l->is_data());}
 
 	virtual bool need_to_bool() const {return true;}
 	virtual exp_type<T> clone() const {return std::make_shared<transparent_judge_exp<T>>(this->get_left_item());}
 
 	virtual bool judge(const std::function<T(const std::string&)>& cb) const {return this->get_left_item()->judge(cb);}
-	virtual exp_type<T> bang() const {return std::make_shared<not_judge_exp<T>>(this->get_left_item());}
+	virtual exp_type<T> bang() const {return std::make_shared<not_judge_exp<T>>(this->get_left_item());} //'!(a?)' equals to '!a'
 
 	virtual exp_type<T> final_optimize() const
-		{return exp<T>::final_optimize_1(this->get_left_item(), [](exp_ctype<T>& l) {return std::make_shared<transparent_judge_exp<T>>(l);});}
+	{
+		return exp<T>::final_optimize_1(this->get_left_item(), [](exp_ctype<T>& l) {
+			return is_my_type(l) ? l : std::make_shared<transparent_judge_exp<T>>(l);
+		});
+	}
 };
 
-template <typename T> class not_judge_exp : public unitary_judge_exp<T>
+template <typename T> class not_judge_exp : public unitary_exp<T, judge_exp>
 {
 public:
-	not_judge_exp(exp_ctype<T>& exp_l) : unitary_judge_exp<T>(exp_l) {assert(exp_l->is_data() || !exp_l->is_reverser());}
+	static inline bool is_my_type(exp_ctype<T>& exp) {return !exp->is_data() && exp->is_reverser();}
+
+public:
+	not_judge_exp(exp_ctype<T>& exp_l) :
+		unitary_exp<T, judge_exp>(negative_data_exp<T>::is_my_type(exp_l) ? exp_l->to_negative() : exp_l) //'!(-a)' equals to '!a'
+		{assert(!is_my_type(exp_l));}
 
 	virtual bool is_reverser() const {return true;}
 	virtual exp_type<T> clone() const {return std::make_shared<not_judge_exp<T>>(this->get_left_item());}
 
 	virtual bool judge(const std::function<T(const std::string&)>& cb) const {return !this->get_left_item()->judge(cb);}
 	virtual exp_type<T> bang() const
-		{auto exp_l = this->get_left_item(); return exp_l->is_data() ? std::make_shared<transparent_judge_exp<T>>(exp_l) : exp_l;}
+		{auto& exp_l = this->get_left_item(); return exp_l->is_data() ? std::make_shared<transparent_judge_exp<T>>(exp_l) : exp_l;}
 
 	virtual exp_type<T> final_optimize() const
-		{return exp<T>::final_optimize_1(this->get_left_item(), [](exp_ctype<T>& l) {return std::make_shared<not_judge_exp<T>>(l);});}
+	{
+		return exp<T>::final_optimize_1(this->get_left_item(), [](exp_ctype<T>& l) {
+			return is_my_type(l) ? l->bang() : std::make_shared<not_judge_exp<T>>(l);
+		});
+	}
 };
 
 template <typename T> inline exp_type<T> make_binary_judge_exp(exp_ctype<T>&, exp_ctype<T>&, const std::string&);
-template <typename T> class binary_judge_exp : public judge_exp<T>
+//doesn't need to be composite since for binary_judge_exp, no recursion will happen in function bang and to_negative with any optimization level.
+template <typename T> class binary_judge_exp : public binary_exp<T, judge_exp>
 {
-public:
-	binary_judge_exp(exp_ctype<T>& _exp_l, exp_ctype<T>& _exp_r, const std::string& _c) : c(_c), exp_l(_exp_l), exp_r(_exp_r) {}
+protected:
+	using binary_exp<T, judge_exp>::binary_exp;
 
 public:
-	virtual int get_depth() const {return 1 + std::max(exp_l->get_depth(), exp_r->get_depth());}
-	virtual void show_immediate_value() const {exp_l->show_immediate_value(); exp_r->show_immediate_value();}
-	virtual exp_type<T> clone() const {return make_binary_judge_exp<T>(exp_l, exp_r, c);}
-	virtual const std::string& get_operator() const {return c;}
-	virtual exp_type<T> get_left_item() const {return exp_l;}
-	virtual exp_type<T> get_right_item() const {return exp_r;}
-	virtual void clear() {exp_l.reset(); exp_r.reset();}
+	virtual exp_type<T> clone() const {return make_binary_judge_exp<T>(this->get_left_item(), this->get_right_item(), this->get_operator());}
 
 	virtual exp_type<T> final_optimize() const
-		{return exp<T>::final_optimize_2(exp_l, exp_r, [&](exp_ctype<T>& l, exp_ctype<T>& r) {return make_binary_judge_exp<T>(l, r, c);});}
+	{
+		auto exp_l = this->get_left_item(), exp_r = this->get_right_item();
+		auto final_exp = exp<T>::final_optimize_2(exp_l, exp_r, [&](exp_ctype<T>& l, exp_ctype<T>& r) {
+			exp_l = l;
+			exp_r = r;
+			return make_binary_judge_exp<T>(l, r, this->get_operator());
+		});
 
-private:
-	std::string c;
-	exp_type<T> exp_l, exp_r;
+		exp_type<T> useful_exp;
+		if (exp_l->is_immediate() && 0 == exp_l->get_immediate_value())
+			useful_exp = exp_r;
+		else if (exp_r->is_immediate() && 0 == exp_r->get_immediate_value())
+			useful_exp = exp_l;
+
+		if (useful_exp)
+		{
+			auto& c = this->get_operator();
+			if ("==" == c) //'a == 0' equals to '!a'
+				return not_judge_exp<T>::is_my_type(useful_exp) ? useful_exp->bang() : std::make_shared<not_judge_exp<T>>(useful_exp);
+			else if ("!=" == c) //'a != 0' equals to 'a?'
+				return useful_exp->is_data() ? std::make_shared<transparent_judge_exp<T>>(useful_exp) : useful_exp;
+		}
+		return final_exp;
+	}
 };
 
 template <typename T> class smaller_equal_judge_exp;
@@ -976,27 +1037,28 @@ template <typename T> inline exp_type<T> make_binary_judge_exp(exp_ctype<T>& exp
 }
 
 template <typename T>inline exp_type<T> make_logical_exp(exp_ctype<T>&, exp_ctype<T>&, const std::string&);
-template <typename T> class logical_exp : public judge_exp<T>
+template <typename T> class logical_exp : public binary_exp<T, judge_exp>
 {
 protected:
-	logical_exp(exp_ctype<T>& _exp_l, exp_ctype<T>& _exp_r, const std::string& _lop) : lop(_lop), exp_l(_exp_l), exp_r(_exp_r) {}
+	using binary_exp<T, judge_exp>::binary_exp;
 
 public:
 	virtual bool is_composite() const {return true;}
-	virtual int get_depth() const {return 1 + std::max(exp_l->get_depth(), exp_l->get_depth());}
-	virtual void show_immediate_value() const {exp_l->show_immediate_value(); exp_r->show_immediate_value();}
-	virtual exp_type<T> clone() const {return make_logical_exp<T>(exp_l, exp_r, lop);}
-	virtual const std::string& get_operator() const {return lop;}
-	virtual exp_type<T> get_left_item() const {return exp_l;}
-	virtual exp_type<T> get_right_item() const {return exp_r;}
-	virtual void clear() {exp_l.reset(); exp_r.reset();}
+	virtual exp_type<T> clone() const {return make_logical_exp<T>(this->get_left_item(), this->get_right_item(), this->get_operator());}
 
 	virtual exp_type<T> final_optimize() const
-		{return exp<T>::final_optimize_2(exp_l, exp_r, [&](exp_ctype<T>& l, exp_ctype<T>& r) {return make_logical_exp<T>(l, r, lop);});}
+	{
+		auto exp_l = this->get_left_item(), exp_r = this->get_right_item();
+		auto final_exp = exp<T>::final_optimize_2(exp_l, exp_r, [&](exp_ctype<T>& l, exp_ctype<T>& r) {
+			exp_l = l;
+			exp_r = r;
+			return make_logical_exp<T>(l, r, this->get_operator());
+		});
 
-private:
-	std::string lop;
-	exp_type<T> exp_l, exp_r;
+		if (not_judge_exp<T>::is_my_type(exp_l) && not_judge_exp<T>::is_my_type(exp_r)) //'!a && !b' equals to '!(a || b)', '!a || !b' equals to '!(a && b)'
+			return std::make_shared<not_judge_exp<T>>(make_logical_exp(exp_l->bang(), exp_r->bang(), "&&" == this->get_operator() ? "||" : "&&"));
+		return final_exp;
+	}
 };
 
 template <typename T> class or_judge_exp;
@@ -1045,9 +1107,9 @@ public:
 	virtual void show_immediate_value() const
 		{exp->show_immediate_value(); exp_l->show_immediate_value(); exp_r->show_immediate_value();}
 	exp_type<T> clone() const {return std::make_shared<question_exp<T>>(exp, exp_l, exp_r);}
-	virtual exp_type<T> get_road_map() const {return exp;}
-	virtual exp_type<T> get_left_item() const {return exp_l;}
-	virtual exp_type<T> get_right_item() const {return exp_r;}
+	virtual exp_ctype<T>& get_road_map() const {return exp;}
+	virtual exp_ctype<T>& get_left_item() const {return exp_l;}
+	virtual exp_ctype<T>& get_right_item() const {return exp_r;}
 
 	virtual T data(const std::function<T(const std::string&)>& cb) const {return exp->judge(cb) ? (*exp_l)(cb) : (*exp_r)(cb);}
 	virtual void clear() {exp.reset(); exp_l.reset(); exp_r.reset();}

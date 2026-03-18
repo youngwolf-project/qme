@@ -54,7 +54,8 @@ int main(int argc, const char* argv[])
 {
 	const ut_input_and_expectation<> inputs[] = {
 		//test merging of immediate values at compilation time (O3)
-		//for O2, immediate values can be different, please note. so 5 UT cases will fail, and 2 UT cases cannot run (divide zero)
+		//for O0/1/2, immediate values can be different, please note
+		//for integer data type, 5 UT cases will fail as expected, and 2 UT cases cannot run (divide zero)
 		{"a ? a + 1 + 2 + 3 : 0", -94.f, 106.f}, //immediate values: 6, 0
 		{"a ? a + 1 / 2 + 3 : 0", -96.5f, 103.5f}, //immediate values: 3.5, 0
 		{"a ? a / 1 / 2 + 3 : 0", -47.f, 53.f}, //immediate values: 0.5, 3, 0
@@ -100,7 +101,7 @@ int main(int argc, const char* argv[])
 		{"a ? -(a > 0 ? a : 10) + 20 : 0", 10.f, -80.f}, //immediate values: 20, 0 (from the judgement of the sub qme), 10, 0
 
 		//test merging of same variables -- use multiplier or exponent (O3)
-		//for O2, immediate values can be different, please note
+		//for O0/1/2, immediate values can be different, please note
 		{"a ? a + a + b + b : 0", -198.f, 198.f}, //transform to 2 * a + 2 * b
 		{"a ? a + b + a + b : 0", -198.f, 198.f}, //transform to 2 * a + 2 * b
 		{"a ? 2 * a + a + a : 0", -400.f, 400.f}, //transform to 4 * a
