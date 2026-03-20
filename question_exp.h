@@ -95,6 +95,8 @@ public:
 	static inline exp_type<T> final_optimize_2(exp_type<T>& exp_l, exp_type<T>& exp_r, const std::function<exp_type<T>(exp_ctype<T>&, exp_ctype<T>&)>& transformer)
 		{final_optimize_1(exp_l); final_optimize_1(exp_r); return transformer(exp_l, exp_r);}
 
+	static inline bool is_zero(exp_ctype<T>& exp) {return exp->is_immediate() && 0 == exp->get_immediate_value();}
+
 protected:
 	virtual ~exp() {}
 
@@ -447,9 +449,9 @@ public:
 		switch (this->get_operator().front())
 		{
 		case '+':
-			if (exp_l->is_immediate() && 0 == exp_l->get_immediate_value())
+			if (exp<T>::is_zero(exp_l))
 				return exp_r;
-			else if (exp_r->is_immediate() && 0 == exp_r->get_immediate_value())
+			else if (exp<T>::is_zero(exp_r))
 				return exp_l;
 			else if (exp_r->is_negative())
 				return merge_data_exp<T, O>(exp_l, exp_r->to_negative(), '-');
@@ -457,9 +459,9 @@ public:
 				return merge_data_exp<T, O>(exp_r, exp_l->to_negative(), '-');
 			break;
 		case '-':
-			if (exp_l->is_immediate() && 0 == exp_l->get_immediate_value())
+			if (exp<T>::is_zero(exp_l))
 				return exp_r->to_negative();
-			else if (exp_r->is_immediate() && 0 == exp_r->get_immediate_value())
+			else if (exp<T>::is_zero(exp_r))
 				return exp_l;
 			else if (exp_r->is_negative())
 				return merge_data_exp<T, O>(exp_l, exp_r->to_negative(), '+');
@@ -919,9 +921,9 @@ public:
 	static exp_type<T> simple_optimize(exp_ctype<T>& l, exp_ctype<T>& r, const std::string& c)
 	{
 		exp_type<T> useful_exp;
-		if (l->is_immediate() && 0 == l->get_immediate_value())
+		if (exp<T>::is_zero(l))
 			useful_exp = r;
-		else if (r->is_immediate() && 0 == r->get_immediate_value())
+		else if (exp<T>::is_zero(r))
 			useful_exp = l;
 
 		if (useful_exp)
