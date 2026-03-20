@@ -88,8 +88,12 @@ template <typename T> class exp
 {
 public:
 	static inline bool final_optimize_1(exp_type<T>& exp) {auto e = exp->final_optimize(); return e ? (exp = e, true) : false;}
+	static inline exp_type<T> final_optimize_1(exp_type<T>& exp, const std::function<exp_type<T>(exp_ctype<T>&)>& transformer)
+		{final_optimize_1(exp); return transformer(exp);}
 	static inline bool final_optimize_2(exp_type<T>& exp_l, exp_type<T>& exp_r)
 		{auto re = final_optimize_1(exp_l); return final_optimize_1(exp_r) || re;}
+	static inline exp_type<T> final_optimize_2(exp_type<T>& exp_l, exp_type<T>& exp_r, const std::function<exp_type<T>(exp_ctype<T>&, exp_ctype<T>&)>& transformer)
+		{final_optimize_1(exp_l); final_optimize_1(exp_r); return transformer(exp_l, exp_r);}
 
 protected:
 	virtual ~exp() {}
@@ -228,12 +232,8 @@ public:
 	virtual exp_type<T> bang() const //'!(-!a)' equals to 'a?', '!(-a)' equals to '!a'
 		{auto& exp_l = this->get_left_item(); return not_judge_exp<T>::is_my_type(exp_l) ? exp_l->bang() : std::make_shared<not_judge_exp<T>>(exp_l);}
 
-	virtual exp_type<T> final_optimize()
-	{
-		auto& exp_l = this->left();
-		exp<T>::final_optimize_1(exp_l);
-		return is_my_type(exp_l) ? exp_l->to_negative() : exp_type<T>(); //'-(-a)' equals to 'a'
-	}
+	virtual exp_type<T> final_optimize() //'-(-a)' equals to 'a'
+		{return exp<T>::final_optimize_1(this->left(), [](exp_ctype<T>& l) {return is_my_type(l) ? l->to_negative() : exp_type<T>();});}
 
 	virtual bool is_easy_to_negative() const {return true;}
 	virtual bool is_negative() const {return true;}
@@ -874,12 +874,8 @@ public:
 	virtual bool judge(const std::function<T(const std::string&)>& cb) const {return this->get_left_item()->judge(cb);}
 	virtual exp_type<T> bang() const {return std::make_shared<not_judge_exp<T>>(this->get_left_item());} //'!(a?)' equals to '!a'
 
-	virtual exp_type<T> final_optimize()
-	{
-		auto& exp_l = this->left();
-		exp<T>::final_optimize_1(exp_l);
-		return is_my_type(exp_l) ? exp_l : exp_type<T>(); //'(a?)?' equals to 'a?'
-	}
+	virtual exp_type<T> final_optimize() //'(a?)?' equals to 'a?'
+		{return exp<T>::final_optimize_1(this->left(), [](exp_ctype<T>& l) {return is_my_type(l) ? l : exp_type<T>();});}
 };
 
 template <typename T> class not_judge_exp : public unitary_exp<T, judge_exp>
@@ -899,12 +895,8 @@ public:
 	virtual exp_type<T> bang() const
 		{auto& exp_l = this->get_left_item(); return exp_l->is_data() ? std::make_shared<transparent_judge_exp<T>>(exp_l) : exp_l;}
 
-	virtual exp_type<T> final_optimize()
-	{
-		auto& exp_l = this->left();
-		exp<T>::final_optimize_1(exp_l);
-		return is_my_type(exp_l) ? exp_l->bang() : exp_type<T>(); //'!(!a)' equals to 'a?'
-	}
+	virtual exp_type<T> final_optimize() //'!(!a)' equals to 'a?'
+		{return exp<T>::final_optimize_1(this->left(), [](exp_ctype<T>& l) {return is_my_type(l) ? l->bang() : exp_type<T>();});}
 };
 
 template <typename T> inline exp_type<T> make_binary_judge_exp(exp_ctype<T>&, exp_ctype<T>&, const std::string&);
@@ -919,19 +911,21 @@ public:
 
 	virtual exp_type<T> final_optimize()
 	{
-		auto& exp_l = this->left();
-		auto& exp_r = this->right();
-		exp<T>::final_optimize_2(exp_l, exp_r);
+		return exp<T>::final_optimize_2(this->left(), this->right(), [this](exp_ctype<T>& l, exp_ctype<T>& r) {
+			return simple_optimize(l, r, this->get_operator());
+		});
+	}
 
+	static exp_type<T> simple_optimize(exp_ctype<T>& l, exp_ctype<T>& r, const std::string& c)
+	{
 		exp_type<T> useful_exp;
-		if (exp_l->is_immediate() && 0 == exp_l->get_immediate_value())
-			useful_exp = exp_r;
-		else if (exp_r->is_immediate() && 0 == exp_r->get_immediate_value())
-			useful_exp = exp_l;
+		if (l->is_immediate() && 0 == l->get_immediate_value())
+			useful_exp = r;
+		else if (r->is_immediate() && 0 == r->get_immediate_value())
+			useful_exp = l;
 
 		if (useful_exp)
 		{
-			auto& c = this->get_operator();
 			if ("==" == c) //'(!a) == 0' equals to 'a?' , 'a == 0' equals to '!a'
 				return not_judge_exp<T>::is_my_type(useful_exp) ? useful_exp->bang() : std::make_shared<not_judge_exp<T>>(useful_exp);
 			else if ("!=" == c) //'a != 0' equals to 'a?', '(a?) != 0' equals to 'a?'
@@ -1006,7 +1000,12 @@ public:
 
 template <typename T> inline exp_type<T> make_binary_judge_exp(exp_ctype<T>& exp_l, exp_ctype<T>& exp_r, const std::string& c)
 {
-	if (">" == c)
+	//with optimization level qme::O0/qme::O1, virtual function final_optimize will not be called,
+	// so we can only do neccessary optimization (must not introduce recursion) at here.
+	auto re = binary_judge_exp<T>::simple_optimize(exp_l, exp_r, c);
+	if (re)
+		return re;
+	else if (">" == c)
 		return std::make_shared<bigger_judge_exp<T>>(exp_l, exp_r);
 	else if (">=" == c)
 		return std::make_shared<bigger_equal_judge_exp<T>>(exp_l, exp_r);
@@ -1034,13 +1033,15 @@ public:
 
 	virtual exp_type<T> final_optimize()
 	{
-		auto& exp_l = this->left();
-		auto& exp_r = this->right();
-		exp<T>::final_optimize_2(exp_l, exp_r);
+		return exp<T>::final_optimize_2(this->left(), this->right(), [this](exp_ctype<T>& l, exp_ctype<T>& r) {
+			return simple_optimize(l, r, this->get_operator());
+		});
+	}
 
-		if (not_judge_exp<T>::is_my_type(exp_l) && not_judge_exp<T>::is_my_type(exp_r)) //'!a && !b' equals to '!(a || b)', '!a || !b' equals to '!(a && b)'
-			return std::make_shared<not_judge_exp<T>>(make_logical_exp(exp_l->bang(), exp_r->bang(), "&&" == this->get_operator() ? "||" : "&&"));
-		return exp_type<T>();
+	static exp_type<T> simple_optimize(exp_ctype<T>& l, exp_ctype<T>& r, const std::string& lop)
+	{
+		return not_judge_exp<T>::is_my_type(l) && not_judge_exp<T>::is_my_type(r) ? //'!a && !b' equals to '!(a || b)', '!a || !b' equals to '!(a && b)'
+			std::make_shared<not_judge_exp<T>>(make_logical_exp(l->bang(), r->bang(), "&&" == lop ? "||" : "&&")) : exp_type<T>();
 	}
 };
 
@@ -1071,12 +1072,17 @@ public:
 
 template <typename T>inline exp_type<T> make_logical_exp(exp_ctype<T>& exp_l, exp_ctype<T>& exp_r, const std::string& lop)
 {
-	if ("&&" == lop)
-		return std::make_shared<and_judge_exp<T>>(exp_l, exp_r);
-	else if ("||" == lop)
-		return std::make_shared<or_judge_exp<T>>(exp_l, exp_r);
-	else
+	if ("&&" != lop && "||" != lop)
 		throw("undefined logical operator " + lop);
+
+	//with optimization level qme::O0/qme::O1, virtual function final_optimize will not be called,
+	// so we can only do neccessary optimization (must not introduce recursion) at here.
+	auto re = logical_exp<T>::simple_optimize(exp_l, exp_r, lop);
+	if (re)
+		return re;
+	else if ("&&" == lop)
+		return std::make_shared<and_judge_exp<T>>(exp_l, exp_r);
+	return std::make_shared<or_judge_exp<T>>(exp_l, exp_r); //"||" == lop
 }
 /////////////////////////////////////////////////////////////////////////////////////////
 
