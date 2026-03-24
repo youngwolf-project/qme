@@ -95,13 +95,22 @@ public:
 	static inline exp_type<T> final_optimize_2(exp_type<T>& exp_l, exp_type<T>& exp_r, const std::function<exp_type<T>(exp_ctype<T>&, exp_ctype<T>&)>& transformer)
 		{final_optimize_1(exp_l); final_optimize_1(exp_r); return transformer(exp_l, exp_r);}
 
-	static inline bool is_zero(exp_ctype<T>& exp) {return exp->is_immediate() && 0 == exp->get_immediate_value();}
+	static inline exp_ctype<T>& null() {static exp_ctype<T> na; return na;}
 
 protected:
 	virtual ~exp() {}
 
 public:
-	virtual bool is_data() const {return false;}
+	inline bool is_judge() const {return !is_data();}
+	inline bool is_selector() const {return (bool) get_road_map();} //selector always has left item, which means it's a parent node
+	inline bool is_parent() const {return (bool) get_left_item();}
+	inline bool is_zero() const {return is_immediate() && 0 == get_immediate_value();}
+	inline bool is_leaf() const {return !get_road_map() && !get_left_item() && !get_right_item();}
+	inline bool is_valid() const //after safe_delete, this check is not right anymore, you may still get a positive result
+		{return is_judge() ? (bool) get_left_item() : get_road_map() ? get_left_item() && get_right_item() : get_left_item() ? true : !get_right_item();}
+	inline T operator()(const std::function<T(const std::string&)>& cb) const {return data(cb);}
+
+	virtual bool is_data() const = 0;
 	virtual bool is_composite() const {return false;} //used for O::level() < 2 to avoid recursion, operator, left item and right item must be valid
 	virtual bool is_reverser() const {return false;} //true to false, value to -value, and vice versa, just left item is valid
 	virtual bool need_to_bool() const {return false;} //value to bool (via (bool) (0 != value)), just left item is valid
@@ -110,11 +119,10 @@ public:
 
 	virtual exp_type<T> clone() const = 0;
 	virtual const std::string& get_operator() const {throw("unsupported get operator operation");} // * / + - > >= < <= == != && ||
-	virtual exp_ctype<T>& get_road_map() const {static exp_ctype<T> na; return na;}
-	virtual exp_ctype<T>& get_left_item() const {return get_road_map();}
-	virtual exp_ctype<T>& get_right_item() const {return get_road_map();}
+	virtual exp_ctype<T>& get_road_map() const {return null();}
+	virtual exp_ctype<T>& get_left_item() const {return null();}
+	virtual exp_ctype<T>& get_right_item() const {return null();}
 
-	inline T operator()(const std::function<T(const std::string&)>& cb) const {return data(cb);}
 	virtual T data(const std::function<T(const std::string&)>&) const = 0;
 	virtual bool judge(const std::function<T(const std::string&)>&) const = 0;
 	virtual exp_type<T> to_negative() const {return std::make_shared<negative_data_exp<T>>(clone());}
@@ -191,7 +199,7 @@ template <typename T> class data_exp : public exp<T>
 {
 public:
 	virtual bool is_data() const {return true;}
-	virtual bool judge(const std::function<T(const std::string&)>& cb) const {return 0 != this->operator()(cb);}
+	virtual bool judge(const std::function<T(const std::string&)>& cb) const {return 0 != (*this)(cb);}
 };
 
 template <typename T> class judge_exp;
@@ -200,6 +208,7 @@ template <typename T> using judge_exp_ctype = const judge_exp_type<T>;
 template <typename T> class judge_exp : public exp<T>
 {
 public:
+	virtual bool is_data() const {return false;}
 	virtual T data(const std::function<T(const std::string&)>& cb) const {return (T) this->judge(cb);}
 };
 
@@ -379,11 +388,9 @@ public:
 		{
 		case '-':
 			return this->get_left_item()->is_negative();
-			break;
 		case '*':
 		case '/':
 			return this->get_left_item()->is_negative() || this->get_right_item()->is_negative();
-			break;
 		}
 
 		return false;
@@ -449,9 +456,9 @@ public:
 		switch (this->get_operator().front())
 		{
 		case '+':
-			if (exp<T>::is_zero(exp_l))
+			if (exp_l->is_zero())
 				return exp_r;
-			else if (exp<T>::is_zero(exp_r))
+			else if (exp_r->is_zero())
 				return exp_l;
 			else if (exp_r->is_negative())
 				return merge_data_exp<T, O>(exp_l, exp_r->to_negative(), '-');
@@ -459,9 +466,9 @@ public:
 				return merge_data_exp<T, O>(exp_r, exp_l->to_negative(), '-');
 			break;
 		case '-':
-			if (exp<T>::is_zero(exp_l))
+			if (exp_l->is_zero())
 				return exp_r->to_negative();
-			else if (exp<T>::is_zero(exp_r))
+			else if (exp_r->is_zero())
 				return exp_l;
 			else if (exp_r->is_negative())
 				return merge_data_exp<T, O>(exp_l, exp_r->to_negative(), '+');
@@ -775,19 +782,14 @@ inline exp_type<T> make_binary_data_exp(exp_ctype<T>& exp_l, exp_ctype<T>& exp_r
 	{
 	case '+':
 		return std::make_shared<add_data_exp<T, O>>(exp_l, exp_r);
-		break;
 	case '-':
 		return std::make_shared<sub_data_exp<T, O>>(exp_l, exp_r);
-		break;
 	case '*':
 		return std::make_shared<multi_data_exp<T, O>>(exp_l, exp_r);
-		break;
 	case '/':
 		return std::make_shared<div_data_exp<T, O>>(exp_l, exp_r);
-		break;
 	default:
 		throw("undefined operator " + std::string(1, op));
-		break;
 	}
 }
 
@@ -863,7 +865,7 @@ inline exp_type<T> merge_data_exp(exp_ctype<T>& exp_l, exp_ctype<T>& exp_r, cons
 template <typename T> class transparent_judge_exp : public unitary_exp<T, judge_exp>
 {
 public:
-	static inline bool is_my_type(exp_ctype<T>& exp) {return !exp->is_data() && exp->need_to_bool();}
+	static inline bool is_my_type(exp_ctype<T>& exp) {return exp->is_judge() && exp->need_to_bool();}
 
 public:
 	transparent_judge_exp(exp_ctype<T>& exp_l) :
@@ -883,7 +885,7 @@ public:
 template <typename T> class not_judge_exp : public unitary_exp<T, judge_exp>
 {
 public:
-	static inline bool is_my_type(exp_ctype<T>& exp) {return !exp->is_data() && exp->is_reverser();}
+	static inline bool is_my_type(exp_ctype<T>& exp) {return exp->is_judge() && exp->is_reverser();}
 
 public:
 	not_judge_exp(exp_ctype<T>& exp_l) :
@@ -921,9 +923,9 @@ public:
 	static exp_type<T> simple_optimize(exp_ctype<T>& l, exp_ctype<T>& r, const std::string& c)
 	{
 		exp_type<T> useful_exp;
-		if (exp<T>::is_zero(l))
+		if (l->is_zero())
 			useful_exp = r;
-		else if (exp<T>::is_zero(r))
+		else if (r->is_zero())
 			useful_exp = l;
 
 		if (useful_exp)
@@ -1118,9 +1120,6 @@ private:
 /////////////////////////////////////////////////////////////////////////////////////////
 
 /////////////////////////////////////////////////////////////////////////////////////////
-template <typename T> inline bool is_selector(exp_ctype<T>& exp) {return (bool) exp->get_road_map();}
-template <typename T> inline bool is_composite(exp_ctype<T>& exp) {return is_selector(exp) || exp->get_left_item();}
-
 template <typename T> inline bool to_not(T& operand) {return (bool) (operand = (T) (0 == operand));}
 template <typename T> inline bool to_bool(T& operand) {return (bool) (operand = (T) (0 != operand));}
 template <typename T> inline T negate(T& operand) {return operand = -operand;}
@@ -1147,7 +1146,7 @@ template <typename T> inline bool compare(T& operand, const std::string& c, T v)
 // qme::O0/qme::O1 to compile it,
 // qme::safe_data/qme::safe_judge to execute it and
 // qme::safe_delete to delete it,
-//then recursion will be eliminated, but additional runtime judgement will be performed, we have no choice.
+//then recursion will be eliminated, but additional runtime judgment will be performed, we have no choice.
 //
 //with optimization level qme::O0/qme::O1, following functions are still available, if you're encountering above situation,
 //you should not call them manually, please note:
@@ -1162,7 +1161,7 @@ template <typename T> inline bool compare(T& operand, const std::string& c, T v)
 //return the data and max depth (just traveled branches).
 template <typename T> inline std::pair<T, size_t> safe_data(exp_ctype<T>& exp, const std::function<T(const std::string&)>& cb)
 {
-	if (!is_composite(exp))
+	if (!exp->is_parent())
 		return std::make_pair((*exp)(cb), 1);
 
 	size_t max_depth = 1;
@@ -1178,7 +1177,7 @@ template <typename T> inline std::pair<T, size_t> safe_data(exp_ctype<T>& exp, c
 			auto road_map = iter->first->get_road_map();
 			if (!road_map)
 				direction = 1;
-			else if (is_composite(road_map))
+			else if (road_map->is_parent())
 			{
 				exps.emplace_back(road_map, -1);
 				iter = exps.rbegin();
@@ -1194,7 +1193,7 @@ template <typename T> inline std::pair<T, size_t> safe_data(exp_ctype<T>& exp, c
 		{
 			iter->second = 1;
 			auto left = iter->first->get_left_item();
-			if (is_composite(left))
+			if (left->is_parent())
 			{
 				exps.emplace_back(left, -1);
 				iter = exps.rbegin();
@@ -1203,7 +1202,7 @@ template <typename T> inline std::pair<T, size_t> safe_data(exp_ctype<T>& exp, c
 			else
 			{
 				res.emplace_back((*left)(cb));
-				direction = is_selector(iter->first) ? 3 : 2;
+				direction = iter->first->is_selector() ? 3 : 2;
 				max_depth = std::max(exps.size() + 1, max_depth);
 			}
 		}
@@ -1212,7 +1211,7 @@ template <typename T> inline std::pair<T, size_t> safe_data(exp_ctype<T>& exp, c
 			iter->second = direction++;
 			if (iter->first->is_reverser() || iter->first->need_to_bool())
 				continue;
-			else if (!is_selector(iter->first))
+			else if (!iter->first->is_selector())
 			{
 				auto& lop = iter->first->get_operator();
 				if (is_logical_operator(lop))
@@ -1226,7 +1225,7 @@ template <typename T> inline std::pair<T, size_t> safe_data(exp_ctype<T>& exp, c
 			}
 
 			auto right = iter->first->get_right_item();
-			if (is_composite(right))
+			if (right->is_parent())
 			{
 				exps.emplace_back(right, -1);
 				iter = exps.rbegin();
@@ -1253,7 +1252,7 @@ template <typename T> inline std::pair<T, size_t> safe_data(exp_ctype<T>& exp, c
 				assert(!res.empty());
 				to_bool(res.back());
 			}
-			else if (!is_selector(iter->first))
+			else if (!iter->first->is_selector())
 			{
 				auto& op = iter->first->get_operator();
 				if (is_logical_operator(op))
@@ -1279,7 +1278,7 @@ template <typename T> inline std::pair<T, size_t> safe_data(exp_ctype<T>& exp, c
 				direction = 0 != res.back() ? 1 : 2;
 				res.pop_back();
 			}
-			else if (++iter != exps.rend() && !is_selector(iter->first) && 1 == iter->second)
+			else if (++iter != exps.rend() && !iter->first->is_selector() && 1 == iter->second)
 				direction = 2;
 			iter = decltype(iter)(exps.erase(iter.base(), std::end(exps)));
 		}
@@ -1291,7 +1290,7 @@ template <typename T> inline std::pair<T, size_t> safe_data(exp_ctype<T>& exp, c
 	return std::make_pair(res.back(), max_depth);
 }
 
-//return the data and max depth (just traveled branches).
+//return the judgment and max depth (just traveled branches).
 template <typename T> inline std::pair<bool, size_t> safe_judge(exp_ctype<T>& exp, const std::function<T(const std::string&)>& cb)
 {
 	auto re = safe_data(exp, cb);
@@ -1304,7 +1303,7 @@ template <typename T> inline std::pair<bool, size_t> safe_judge(exp_ctype<T>& ex
 	auto branch = iter->first->branch_name(); \
 	if (!branch) \
 		; \
-	else if (is_composite(branch)) \
+	else if (branch->is_parent()) \
 	{ \
 		exps.emplace_back(branch, -1); \
 		iter = exps.rbegin(); \
@@ -1337,7 +1336,7 @@ template <typename T> inline size_t safe_delete(exp_ctype<T>& exp)
 			iter = decltype(iter)(exps.erase(iter.base(), std::end(exps)));
 		}
 
-	assert(max_depth > 0 && exps.empty() && !exp->get_left_item() && !exp->get_right_item());
+	assert(max_depth > 0 && exps.empty() && exp->is_leaf());
 	return max_depth;
 }
 /////////////////////////////////////////////////////////////////////////////////////////
@@ -1528,7 +1527,7 @@ private:
 				if (0 == q_pos)
 				{
 					if (0 == index)
-						throw("missing judgement!");
+						throw("missing judgment!");
 					else if (0 != c_pos)
 						throw(": cannot appears before ?");
 
@@ -1551,7 +1550,7 @@ private:
 				if (0 == c_pos)
 				{
 					if (0 == index)
-						throw("missing judgement!");
+						throw("missing judgment!");
 
 					c_pos = index;
 				}
@@ -1795,11 +1794,11 @@ private:
 			++revert;
 		else if (op == last_operator)
 			throw("redundant " + std::string(1, op) + " operator!");
-		else if (0 == revert) //!a always equals to !+a and !-a no matter a is data or judgement, so following + and - can be ignored
+		else if (0 == revert) //!a always equals to !+a and !-a no matter a is data or judgment, so following + and - can be ignored
 		{
 			if (negative < 0)
-				negative = 0; //keep leading +/- operator so we can transform judgement to data
-			if ('-' == op) //leading + is useless except to transform judgement to data
+				negative = 0; //keep leading +/- operator so we can transform judgment to data
+			if ('-' == op) //leading + is useless except to transform judgment to data
 				++negative;
 		}
 		last_operator = op;
@@ -1815,7 +1814,7 @@ private:
 		auto negative = -1; //number of -, 0 means at least one +
 		auto revert = 0; //number of !
 
-		exp_type<T> data_1, data_2; //treat as data (which means they can be judgements)
+		exp_type<T> data_1, data_2; //treat as data (which means they can be judgments)
 		std::string op_1, op_2;
 
 		exp_type<T> dc; //merged comparand (from data_1 and data_2 with op_1)
@@ -1825,7 +1824,7 @@ private:
 		std::string lop_1, lop_2;
 
 		exp_type<T> fj; //for final question exp, treat as judge (which means they can be data)
-		exp_type<T> fd_1, fd_2; //for final question exp, treat as data (which means they can be judgements)
+		exp_type<T> fd_1, fd_2; //for final question exp, treat as data (which means they can be judgments)
 
 		while (index < end_index)
 		{
@@ -1983,7 +1982,7 @@ private:
 				else
 					parsed_exp = parse_data(item);
 
-				auto is_judge = !parsed_exp->is_data();
+				auto is_judge = parsed_exp->is_judge();
 				if (revert > 0)
 				{
 					is_judge = true;
