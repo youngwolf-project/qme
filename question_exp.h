@@ -577,17 +577,12 @@ public:
 
 	virtual T data(const std::function<T(const std::string&)>& cb) const
 	{
-#ifndef _MSC_VER //keep the order of data fetching for debuging
+		//keep the order of data fetching for debuging
 		auto dividend = (*this->get_left_item())(cb);
-#endif
 		auto divisor = (*this->get_right_item())(cb);
 		if (0 == divisor)
 			throw("divide zero");
-#ifdef _MSC_VER
-		return (*this->get_left_item())(cb) / divisor;
-#else
 		return dividend / divisor;
-#endif
 	}
 };
 
