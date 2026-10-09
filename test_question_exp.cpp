@@ -264,25 +264,18 @@ int main(int argc, const char* argv[])
 	*/
 	auto cb_2 = [&](const std::string& variable_name) {return cb(dm_2, variable_name);};
 
+	typedef float D;
+	typedef qme::O3 O;
+	if (std::is_integral<D>::value && O::level() > 2)
+		printf("\033[33mfor integer (1 ~ 8 bytes), optimization level 3 will be downgraded to level 2!\033[0m\n");
+
 	cpu_timer timer;
 	auto compile_succ = 0, exec_succ = 0, match = 0;
 	for (size_t i = 0; i < sizeof(inputs) / sizeof(ut_input_and_expectation<>); ++i)
 	{
 		printf("compile the question mark expression: %s\n", inputs[i].input);
 		timer.restart();
-#if 0
-		typedef int D;
-		//typedef qme::O0 O; //for integer (1 ~ 8 bytes), optimization level 0 is OK
-		//typedef qme::O1 O; //for integer (1 ~ 8 bytes), optimization level 1 is OK
-		typedef qme::O2 O; //for integer (1 ~ 8 bytes), optimization level 2 is OK and suggested
-		//typedef qme::O3 O; //for integer (1 ~ 8 bytes), do not use optimization level 3
-#else
-		typedef float D;
-		//typedef qme::O0 O; //for float (4 ~ 8 bytes), any optimization level is OK
-		//typedef qme::O1 O; //for float (4 ~ 8 bytes), any optimization level is OK
-		//typedef qme::O2 O; //for float (4 ~ 8 bytes), any optimization level is OK
-		typedef qme::O3 O; //for float (4 ~ 8 bytes), the default and suggested optimization level is 3
-#endif
+
 		auto exp = qme::compiler<D, O>::compile(inputs[i].input);
 		printf("spent %f seconds.\n", timer.elapsed());
 		if (exp)

@@ -24,18 +24,19 @@ namespace qme
 class O0 {public: static int level() {return 0;}};
 
 //without any exchange between any data, but merge adjacent immediate values.
+//for integer (1 ~ 8 bytes), during merging adjacent immediate values, the optimization level will be upgraded to 2 temporarily.
 class O1 {public: static int level() {return 1;}};
 
-//don't exchange the data order for divide operations, nor transform them to multiply operations, for example:
-// 'b / (b / 3)' will not be transformed to '3', because the latter never triggers divide zero for integer (1 ~ 8 bytes)
-// '2 * a / 3' will not be transformed to '(2 / 3) * a', because the latter will always be zero for integer (1 ~ 8 bytes)
-// 'a * 2 / 3' will not be transformed to 'a * (2 / 3)', because the latter will always be zero for integer (1 ~ 8 bytes)
-// 'a / 2 * 3' will not be transformed to '(3 / 2) * a'
-// '2 / a * 3' will not be transformed to '(2 * 3) / a'
-class O2 {public: static int level() {return 2;}};
+//don't change the order of divide operations and multiply operations, nor transform divide operations to multiply operations, for example:
+// '2 * a / 3' will not be transformed to '(2 / 3) * a', because for integer (1 ~ 8 bytes), the latter will always be zero
+// 'a * 2 / 3' will not be transformed to 'a * (2 / 3)', because for integer (1 ~ 8 bytes), the latter will always be zero
+// 'a / 2 * 3' will not be transformed to '(3 / 2) * a', for integer (1 ~ 8 bytes), if a is 1, the former will get zero, while the latter will get 1
+// '2 / a * 3' will not be transformed to '(2 * 3) / a', for integer (1 ~ 8 bytes), if a is 3, the former will get zero, while the latter will get 2
+// 'b / (b / 3)' will not be transformed to '3', because for integer (1 ~ 8 bytes), the latter never triggers divide zero
+class O2 {public: static int level() {return 2;}}; //for integer (1 ~ 8 bytes), this is the max optimization level we can use
 
 //full optimization
-class O3 {public: static int level() {return 3;}};
+class O3 {public: static int level() {return 3;}}; //for integer (1 ~ 8 bytes), optimization level 3 will be downgraded to level 2
 
 /////////////////////////////////////////////////////////////////////////////////////////
 inline bool is_operator_1(char input) {return '+' == input || '-' == input;}
@@ -71,12 +72,8 @@ inline bool is_key_2(const char* input)
 }
 inline bool is_key_2(const std::string& input) {return is_key_2(input.data());}
 
-template<typename O> inline bool is_same_operator_level(char op_1, char op_2)
-{
-	if (O::level() > 2)
-		return (is_operator_1(op_1) && is_operator_1(op_2)) || (is_operator_2(op_1) && is_operator_2(op_2));
-	return (is_operator_1(op_1) && is_operator_1(op_2)) || ('*' == op_1 && '*' == op_2);
-}
+inline bool is_same_operator_level(char op_1, char op_2)
+	{return (is_operator_1(op_1) && is_operator_1(op_2)) || (is_operator_2(op_1) && is_operator_2(op_2));}
 /////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename T> class exp;
@@ -401,28 +398,27 @@ public:
 		auto op = this->get_operator().front();
 		auto& exp_l = this->left();
 		auto& exp_r = this->right();
-		if (is_same_operator_level<O>(op, other_op))
+		if (is_same_operator_level(op, other_op))
 		{
-			if (O::level() < 2)
+			if (std::is_integral<T>::value && is_operator_2(op) && op != other_op)
+				return false;
+			else if (other_exp->is_immediate()) //merge adjacent immediate values
 			{
-				if (!other_exp->is_immediate())
-					return false;
-				else if (exp_l->is_immediate())
+				if (exp_l->is_immediate())
 					return exp_l->merge_with(other_op, other_exp);
-				else if (!exp_r->is_immediate())
+				else if (exp_r->is_immediate())
+					;
+				else if (O::level() < 2)
 					return false;
-
-				if ('-' == op)
-					other_op = '+' == other_op ? '-' : '+';
-				else if ('/' == op) //other_op must also be '/'
-					other_op = '*';
-				return exp_r->merge_with(other_op, other_exp);
+				else if (exp_l->merge_with(other_op, other_exp))
+					return true;
 			}
+			else if (O::level() < 2)
+				return false;
 			else if (exp_l->merge_with(other_op, other_exp))
 				return true;
-			else if ('+' == op || '*' == op)
-				return exp_r->merge_with(other_op, other_exp);
-			else if ('-' == op)
+
+			if ('-' == op)
 				other_op = '+' == other_op ? '-' : '+';
 			else if ('/' == op)
 				other_op = '*' == other_op ? '/' : '*';
@@ -805,8 +801,11 @@ template <typename T, typename O> inline exp_type<T> merge_data_exp(exp_ctype<T>
 	else if (exp_r->is_composite())
 	{
 		auto op_2 = exp_r->get_operator().front();
-		if (is_same_operator_level<O>(op, op_2))
+		if (is_same_operator_level(op, op_2))
 		{
+			if (std::is_integral<T>::value && '/' == op_2)
+				return make_binary_data_exp<T, O>(exp_l, exp_r, op);
+
 			exp_type<T> data;
 			if (exp_l->merge_with(op, exp_r->get_left_item()))
 			{
@@ -1351,6 +1350,9 @@ public:
 	static exp_type<T> compile(const char* statement) {return compile(std::string(statement));}
 	static exp_type<T> compile(const std::string& statement)
 	{
+		if (std::is_integral<T>::value && O::level() > 2)
+			return qme::compiler<T, O2>::compile(statement);
+
 		try
 		{
 			auto expression = statement;
@@ -1767,7 +1769,7 @@ private:
 		T value;
 		char* endptr;
 		errno = 0;
-		if (std::is_same<T, float>::value || std::is_same<T, double>::value)
+		if (std::is_floating_point<T>::value)
 			value = (T) strtod(vov.data(), &endptr); //(T) atof(vov.data())
 		else
 		{
