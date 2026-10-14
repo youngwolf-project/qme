@@ -225,11 +225,12 @@ int main(int argc, const char* argv[])
 		{"a > 0 || b > || c > 0 ? a : b"},
 	};
 
+	typedef float D;
 	auto cb = [](const std::map<std::string, float>& dm, const std::string& variable_name) {
 		auto iter = dm.find(variable_name);
 		if (iter == std::end(dm))
 			throw("undefined symbol " + variable_name);
-		return iter->second;
+		return (D) iter->second;
 	};
 
 	std::map<std::string, float> dm_1;
@@ -264,11 +265,6 @@ int main(int argc, const char* argv[])
 	*/
 	auto cb_2 = [&](const std::string& variable_name) {return cb(dm_2, variable_name);};
 
-	typedef float D;
-	typedef qme::O3 O;
-	if (std::is_integral<D>::value && O::level() > 2)
-		printf("\033[33mfor integer (1 ~ 8 bytes), optimization level 3 will be downgraded to level 2!\033[0m\n");
-
 	cpu_timer timer;
 	auto compile_succ = 0, exec_succ = 0, match = 0;
 	for (size_t i = 0; i < sizeof(inputs) / sizeof(ut_input_and_expectation<>); ++i)
@@ -276,7 +272,7 @@ int main(int argc, const char* argv[])
 		printf("compile the question mark expression: %s\n", inputs[i].input);
 		timer.restart();
 
-		auto exp = qme::compiler<D, O>::compile(inputs[i].input);
+		auto exp = qme::compiler<D, qme::O3>::compile(inputs[i].input);
 		printf("spent %f seconds.\n", timer.elapsed());
 		if (exp)
 		{
@@ -284,10 +280,10 @@ int main(int argc, const char* argv[])
 			try
 			{
 				puts("perform the question mark expression:");
-				execute_qme<D>(timer, exp, cb_1, inputs[i].exp_1, exec_succ, match);
+				execute_qme<D>(timer, exp, cb_1, (D) inputs[i].exp_1, exec_succ, match);
 
 				puts("perform the question mark expression again:");
-				execute_qme<D>(timer, exp, cb_2, inputs[i].exp_2, exec_succ, match);
+				execute_qme<D>(timer, exp, cb_2, (D) inputs[i].exp_2, exec_succ, match);
 			}
 			catch (const std::exception& e) {printf("\033[31m%s\033[0m\n", e.what());}
 			catch (const std::string& e) {printf("\033[31m%s\033[0m\n", e.data());}

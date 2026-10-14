@@ -1152,6 +1152,7 @@ template <typename T> inline bool compare(T& operand, const std::string& c, T v)
 // is_negative
 // merge_with
 // trim_myself
+//
 //return the data and max depth (just traveled branches).
 template <typename T> inline std::pair<T, size_t> safe_data(exp_ctype<T>& exp, const std::function<T(const std::string&)>& cb)
 {
@@ -1346,12 +1347,22 @@ private:
 	};
 
 public:
+	typedef exp_type<T> result_type;
+
 	static exp_type<T> to_judge_exp(exp_ctype<T>& exp) {return exp->is_data() ? std::make_shared<transparent_judge_exp<T>>(exp) : exp;}
 	static exp_type<T> compile(const char* statement) {return compile(std::string(statement));}
 	static exp_type<T> compile(const std::string& statement)
 	{
 		if (std::is_integral<T>::value && O::level() > 2)
-			return qme::compiler<T, O2>::compile(statement);
+		{
+			thread_local auto first{true};
+			if (first)
+			{
+				first = false;
+				printf("\033[33mfor integer (1 ~ 8 bytes), optimization level 3 will be downgraded to level 2!\033[0m\n");
+			}
+			return compiler<T, O2>::compile(statement);
+		}
 
 		try
 		{
