@@ -1355,12 +1355,7 @@ public:
 	{
 		if (std::is_integral<T>::value && O::level() > 2)
 		{
-			thread_local auto first{true};
-			if (first)
-			{
-				first = false;
-				printf("\033[33mfor integer (1 ~ 8 bytes), optimization level 3 will be downgraded to level 2!\033[0m\n");
-			}
+			printf("\033[33mfor integer (1 ~ 8 bytes), optimization level 3 will be downgraded to level 2!\033[0m\n");
 			return compiler<T, O2>::compile(statement);
 		}
 
