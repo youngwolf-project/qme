@@ -17,15 +17,21 @@
 #define DEBUG
 #endif
 
+#if (_MSVC_LANG > 201402L || __cplusplus > 201402L)
+#define constexpr_if if constexpr
+#else
+#define constexpr_if if
+#endif
+
 namespace qme
 {
 
 //without any exchange between any data, nor merging of immediate values.
-class O0 {public: static int level() {return 0;}};
+class O0 {public: static constexpr int level() {return 0;}};
 
 //without any exchange between any data, but merge adjacent immediate values.
 //for integer (1 ~ 8 bytes), during merging adjacent immediate values, the optimization level will be upgraded to 2 temporarily.
-class O1 {public: static int level() {return 1;}};
+class O1 {public: static constexpr int level() {return 1;}};
 
 //don't change the order of divide operations and multiply operations, nor transform divide operations to multiply operations, for example:
 // '2 * a / 3' will not be transformed to '(2 / 3) * a', because for integer (1 ~ 8 bytes), the latter will always be zero
@@ -33,10 +39,10 @@ class O1 {public: static int level() {return 1;}};
 // 'a / 2 * 3' will not be transformed to '(3 / 2) * a', for integer (1 ~ 8 bytes), if a is 1, the former will get zero, while the latter will get 1
 // '2 / a * 3' will not be transformed to '(2 * 3) / a', for integer (1 ~ 8 bytes), if a is 3, the former will get zero, while the latter will get 2
 // 'b / (b / 3)' will not be transformed to '3', because for integer (1 ~ 8 bytes), the latter never triggers divide zero
-class O2 {public: static int level() {return 2;}}; //for integer (1 ~ 8 bytes), this is the max optimization level we can use
+class O2 {public: static constexpr int level() {return 2;}}; //for integer (1 ~ 8 bytes), this is the max optimization level we can use
 
 //full optimization
-class O3 {public: static int level() {return 3;}}; //for integer (1 ~ 8 bytes), optimization level 3 will be downgraded to level 2
+class O3 {public: static constexpr int level() {return 3;}}; //for integer (1 ~ 8 bytes), optimization level 3 will be downgraded to level 2
 
 /////////////////////////////////////////////////////////////////////////////////////////
 inline bool is_operator_1(char input) {return '+' == input || '-' == input;}
@@ -408,12 +414,12 @@ public:
 					return exp_l->merge_with(other_op, other_exp);
 				else if (exp_r->is_immediate())
 					;
-				else if (O::level() < 2)
+				else constexpr_if (O::level() < 2)
 					return false;
 				else if (exp_l->merge_with(other_op, other_exp))
 					return true;
 			}
-			else if (O::level() < 2)
+			else constexpr_if (O::level() < 2)
 				return false;
 			else if (exp_l->merge_with(other_op, other_exp))
 				return true;
@@ -786,7 +792,7 @@ inline exp_type<T> make_binary_data_exp(exp_ctype<T>& exp_l, exp_ctype<T>& exp_r
 
 template <typename T, typename O> inline exp_type<T> merge_data_exp(exp_ctype<T>& exp_l, exp_ctype<T>& exp_r, char op)
 {
-	if (0 == O::level())
+	constexpr_if (0 == O::level())
 		return make_binary_data_exp<T, O>(exp_l, exp_r, op);
 	else if (exp_r->merge_with(exp_l, op)) //parse 'C * Na^M' and 'C / Na^M' to composite_variable_data_exp instead of binary_data_exp
 	{
@@ -1353,7 +1359,11 @@ public:
 	static exp_type<T> compile(const char* statement) {return compile(std::string(statement));}
 	static exp_type<T> compile(const std::string& statement)
 	{
+#if (_MSVC_LANG > 201402L || __cplusplus > 201402L)
+		if constexpr (std::is_integral_v<T> && O::level() > 2)
+#else
 		if (std::is_integral<T>::value && O::level() > 2)
+#endif
 		{
 			printf("\033[33mfor integer (1 ~ 8 bytes), optimization level 3 will be downgraded to level 2!\033[0m\n");
 			return compiler<T, O2>::compile(statement);
@@ -1418,7 +1428,7 @@ public:
 			auto re = compile(split(expression), sub_exps);
 			if (!re)
 				throw("incomplete expression!");
-			else if (O::level() > 1)
+			else constexpr_if (O::level() > 1)
 			{
 				auto final_re = re->final_optimize();
 				if (final_re)
@@ -1767,7 +1777,7 @@ private:
 			throw("unexpected " + vov);
 		else if (0 == isdigit(vov[0])) //variable
 		{
-			if (O::level() < 2)
+			constexpr_if (O::level() < 2)
 				return std::make_shared<variable_data_exp<T>>(vov);
 			return std::make_shared<composite_variable_data_exp<T, O>>(vov);
 		}
@@ -1775,7 +1785,11 @@ private:
 		T value;
 		char* endptr;
 		errno = 0;
+#if (_MSVC_LANG > 201402L || __cplusplus > 201402L)
+		if constexpr (std::is_floating_point_v<T>)
+#else
 		if (std::is_floating_point<T>::value)
+#endif
 			value = (T) strtod(vov.data(), &endptr); //(T) atof(vov.data())
 		else
 		{
