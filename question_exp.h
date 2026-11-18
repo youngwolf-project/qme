@@ -17,7 +17,8 @@
 #define DEBUG
 #endif
 
-#if (_MSVC_LANG > 201402L || __cplusplus > 201402L)
+//for gcc 6, please define QME_NO_CONSTEXPR_IF because even it declares the support of c++17, it still doesn't support constexpr if statement.
+#if !defined(QME_NO_CONSTEXPR_IF) && (_MSVC_LANG > 201402L || __cplusplus > 201402L)
 #define constexpr_if if constexpr
 #else
 #define constexpr_if if
